@@ -1,0 +1,16 @@
+# sc-nfs.yaml
+# # https://microk8s.io/docs/how-to-nfs
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: k8s-csi
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: 192.168.86.41
+  share: /srv/k8s
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+mountOptions:
+  - hard
+  - nfsvers=4.2

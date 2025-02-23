@@ -1,0 +1,75 @@
+---
+- name: Install NFS CSI Driver using Helm
+  hosts: localhost
+  connection: local
+  pre_tasks:
+    - name: Install required Python packages
+      pip:
+        name: kubernetes>=12.0.0
+        state: present
+
+  tasks:
+    - name: Add csi-driver-nfs Helm repository
+      kubernetes.core.helm_repository:
+        name: csi-driver-nfs
+        repo_url: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+        state: present
+
+    - name: Install NFS CSI Driver
+      kubernetes.core.helm:
+        name: csi-driver-nfs
+        chart_ref: csi-driver-nfs/csi-driver-nfs
+        release_namespace: kube-system
+        chart_version: v4.5.0
+        state: present
+        wait: true
+
+    - name: Wait for CSI controller pod to be ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: kube-system
+        label_selectors:
+          - app=csi-nfs-controller
+      register: controller_pods
+      until: >
+        controller_pods.resources is defined
+        and controller_pods.resources | length > 0
+        and (controller_pods.resources | map(attribute='status.phase') | list | unique == ['Running'])
+      retries: 6
+      delay: 10
+
+    - name: Wait for CSI node pods to be ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: kube-system
+        label_selectors:
+          - app=csi-nfs-node
+      register: node_pods
+      until: >
+        node_pods.resources is defined
+        and node_pods.resources | length > 0
+        and (node_pods.resources | map(attribute='status.phase') | list | unique == ['Running'])
+      retries: 6
+      delay: 10
+
+    - name: Apply NFS storage class
+      kubernetes.core.k8s:
+        state: present
+        src: k8s_configs/k8s-sc.yaml
+
+    - name: Delete local-path storage class
+      kubernetes.core.k8s:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: local-path
+        state: absent
+
+    - name: Set NFS storage class as default
+      kubernetes.core.k8s:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: k8s-csi
+        definition:
+          metadata:
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "true"

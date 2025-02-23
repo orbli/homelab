@@ -1,0 +1,211 @@
+---
+- name: Install k3s on primary node
+  hosts: home-hk1-pi1
+  become: true
+  tags: primary
+  tasks:
+    - name: Ensure kernel modules are loaded
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Configure kernel parameters for k3s
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+        reload: true
+      loop:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+
+    - name: Install fuse-overlayfs
+      apt:
+        name: fuse-overlayfs
+        state: present
+        update_cache: yes
+
+    - name: Download k3s install script
+      get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+
+    - block:
+        - name: Install k3s as primary
+          shell: |
+            INSTALL_K3S_EXEC="server --cluster-init --disable servicelb --disable traefik --flannel-backend=host-gw --bind-address 0.0.0.0 --advertise-address {{ ansible_default_ipv4.address }} --node-ip {{ ansible_default_ipv4.address }} --node-name {{ inventory_hostname }} --snapshotter=fuse-overlayfs --cluster-domain {{ cluster_domain }}" \
+            sh /tmp/k3s-install.sh
+          args:
+            creates: /usr/local/bin/k3s
+      rescue:
+        - name: Get k3s service status
+          shell: systemctl status k3s.service
+          register: service_status
+          failed_when: false
+
+        - name: Get k3s journal logs
+          shell: journalctl -xeu k3s.service
+          register: journal_logs
+          failed_when: false
+
+        - name: Check overlay filesystem status
+          shell: |
+            echo "Overlay filesystem status:"
+            grep overlay /proc/filesystems
+            echo "Current mounts:"
+            mount | grep overlay
+          register: overlay_status
+          failed_when: false
+
+        - name: Display diagnostic information
+          debug:
+            msg: 
+              - "Service Status:"
+              - "{{ service_status.stdout_lines }}"
+              - "Journal Logs:"
+              - "{{ journal_logs.stdout_lines }}"
+              - "Overlay Status:"
+              - "{{ overlay_status.stdout_lines }}"
+
+        - name: Fail with diagnostic information
+          fail:
+            msg: "k3s installation failed. See above logs for details."
+
+    - name: Get k3s token
+      slurp:
+        src: /var/lib/rancher/k3s/server/token
+      register: k3s_token
+
+    - name: Store k3s token for other nodes
+      set_fact:
+        k3s_node_token: "{{ k3s_token.content | b64decode | trim }}"
+        k3s_url: "https://{{ hostvars['home-hk1-pi1'].ansible_default_ipv4.address }}:6443"
+      delegate_facts: true
+
+    - name: Create .kube directory for user o
+      file:
+        path: /home/o/.kube
+        state: directory
+        owner: 1000
+        group: 1000
+        mode: '0700'
+
+    - name: Copy kubeconfig for user access
+      copy:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: /home/o/.kube/config
+        owner: 1000
+        group: 1000
+        mode: '0600'
+        remote_src: yes
+
+    - name: Set permissions on k3s.yaml
+      file:
+        path: /etc/rancher/k3s/k3s.yaml
+        mode: '0644'
+
+- name: Install k3s on secondary nodes
+  hosts: k8s_masters:!home-hk1-pi1
+  become: true
+  gather_facts: true
+  tags: secondary
+  serial: 1
+  order: sorted
+  tasks:
+    - name: Skip if not in correct order
+      meta: end_host
+      when: >
+        (inventory_hostname == 'home-hk1-pi3' and 'home-hk1-pi2' not in ansible_play_hosts_all) or
+        (inventory_hostname == 'home-hk1-pi4' and 'home-hk1-pi3' not in ansible_play_hosts_all)
+
+    - name: Get k3s token from primary node
+      slurp:
+        src: /var/lib/rancher/k3s/server/token
+      register: k3s_token
+      delegate_to: home-hk1-pi1
+
+    - name: Set k3s token fact
+      set_fact:
+        k3s_node_token: "{{ k3s_token.content | b64decode | trim }}"
+
+    - name: Create k3s server directory
+      file:
+        path: /var/lib/rancher/k3s/server
+        state: directory
+        mode: '0755'
+
+    - name: Copy k3s token from primary
+      copy:
+        content: "{{ k3s_node_token }}"
+        dest: /var/lib/rancher/k3s/server/token
+        mode: '0600'
+
+    - name: Ensure kernel modules are loaded
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Configure kernel parameters for k3s
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+        reload: true
+      loop:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+
+    - name: Install fuse-overlayfs
+      apt:
+        name: fuse-overlayfs
+        state: present
+        update_cache: yes
+
+    - name: Download k3s install script
+      get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+
+    - block:
+        - name: Install k3s as secondary server
+          shell: |
+            INSTALL_K3S_EXEC="server --server https://{{ hostvars['home-hk1-pi1']['ansible_host'] }}:6443 --disable servicelb --disable traefik --flannel-backend=host-gw --bind-address 0.0.0.0 --advertise-address {{ ansible_default_ipv4.address }} --node-ip {{ ansible_default_ipv4.address }} --node-name {{ inventory_hostname }} --snapshotter=fuse-overlayfs --token-file /var/lib/rancher/k3s/server/token --cluster-domain {{ cluster_domain }}" \
+            sh /tmp/k3s-install.sh
+          args:
+            creates: /usr/local/bin/k3s
+      rescue:
+        - name: Get k3s service status
+          shell: systemctl status k3s.service
+          register: service_status
+          failed_when: false
+
+        - name: Get k3s journal logs
+          shell: journalctl -xeu k3s.service
+          register: journal_logs
+          failed_when: false
+
+        - name: Check overlay filesystem status
+          shell: |
+            echo "Overlay filesystem status:"
+            grep overlay /proc/filesystems
+            echo "Current mounts:"
+            mount | grep overlay
+          register: overlay_status
+          failed_when: false
+
+    - name: Set permissions on k3s.yaml
+      file:
+        path: /etc/rancher/k3s/k3s.yaml
+        mode: '0644'

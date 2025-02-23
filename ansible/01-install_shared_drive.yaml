@@ -1,0 +1,76 @@
+- name: My first play
+  hosts: shared_drive
+  become: true
+  handlers:
+    - name: stop systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: no
+
+    - name: restart dnsmasq
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: restarted
+        enabled: yes
+      notify: stop systemd-resolved
+
+  tasks:
+   - name: Configure systemd-resolved to free up port 53
+     ansible.builtin.copy:
+       dest: /etc/systemd/resolved.conf
+       content: |
+         [Resolve]
+         DNSStubListener=no
+       mode: '0644'
+     notify: stop systemd-resolved
+
+   - name: Install required packages
+     ansible.builtin.apt:
+       name:
+         - nfs-kernel-server
+         - kpartx
+         - unzip
+         - xz-utils
+         - dnsmasq
+       state: present
+       update_cache: yes
+
+   # Force handlers to run now before we continue
+   - name: Flush handlers
+     meta: flush_handlers
+
+   # Replace symlink task with direct file creation
+   - name: Create resolv.conf file
+     ansible.builtin.copy:
+       dest: /etc/resolv.conf
+       content: |
+         nameserver 127.0.0.1
+         nameserver 8.8.8.8
+         nameserver 8.8.4.4
+       mode: '0644'
+     notify: restart dnsmasq
+
+   - name: Create required directories
+     ansible.builtin.file:
+       path: "{{ item }}"
+       state: directory
+       mode: '0755'
+     loop:
+       - /srv
+       - /srv/tftpboot
+       - /srv/nfs
+
+   - name: Configure dnsmasq
+     ansible.builtin.copy:
+       dest: /etc/dnsmasq.conf
+       content: |
+         dhcp-range=192.168.86.255,proxy
+         log-dhcp
+         enable-tftp
+         tftp-root=/srv/tftpboot
+         pxe-service=0,"Raspberry Pi Boot"
+       mode: '0644'
+     notify: 
+       - stop systemd-resolved
+       - restart dnsmasq 

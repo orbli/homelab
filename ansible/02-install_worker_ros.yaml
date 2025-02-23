@@ -1,0 +1,260 @@
+---
+- name: Set up PXE boot for ROS worker nodes
+  hosts: shared_drive
+  become: true
+  vars:
+    work_dir: /srv/tmp
+    image_file: "{{ work_dir }}/raspios_lite_arm64_latest.img.xz"
+    extracted_image: "{{ work_dir }}/raspios_lite_arm64_latest.img"
+    bootmnt: "{{ work_dir }}/bootmnt"
+    rootmnt: "{{ work_dir }}/rootmnt"
+    tftp_root: /srv/tftpboot
+    default_username: o
+    default_password: '$6$OMsVefgURgPzHy79$4nmPWdAQhyppwoA49GFrqNKCFr6bSeGicy991F4lrAHwHYo2ipW5Kcc98RMWOUJhUXJSKpD158xq8OH6zepqz0'
+
+  pre_tasks:
+    - name: Verify target_host is provided
+      fail:
+        msg: "target_host variable must be provided. This should be the hostname of the Raspberry Pi to set up (e.g. home-hk1-pi1)"
+      when: target_host is not defined
+
+    - name: Verify target host exists in inventory
+      fail:
+        msg: "{{ target_host }} not found in inventory or missing required variables (serial, ansible_host)"
+      when: >
+        target_host not in groups['k8s_masters'] or
+        hostvars[target_host].serial is not defined or
+        hostvars[target_host].ansible_host is not defined
+
+    - name: Unmount TFTP directory if mounted
+      mount:
+        path: "{{ tftp_root }}/{{ hostvars[target_host].serial }}"
+        state: unmounted
+      ignore_errors: true
+
+    - name: Clean up target directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/srv/nfs/{{ target_host }}"
+        - "{{ tftp_root }}/{{ hostvars[target_host].serial }}"
+
+  tasks:
+    - name: Install required packages
+      apt:
+        name: 
+          - kpartx
+          - wget
+        state: present
+
+    - name: Create required directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ work_dir }}"
+        - "{{ bootmnt }}"
+        - "{{ rootmnt }}"
+        - "/srv/nfs/{{ target_host }}"
+        - "{{ tftp_root }}/{{ hostvars[target_host].serial }}"
+
+    - name: Download Raspberry Pi OS image if not exists
+      get_url:
+        url: https://downloads.raspberrypi.org/raspios_lite_arm64_latest
+        dest: "{{ image_file }}"
+        mode: '0644'
+      when: not ansible_check_mode
+
+    - name: Extract image if not already extracted
+      command: xz -d -k {{ image_file }}
+      args:
+        creates: "{{ extracted_image }}"
+      when: not ansible_check_mode
+
+    - name: Clean up existing mounts
+      mount:
+        path: "{{ item }}"
+        state: unmounted
+      loop:
+        - "{{ bootmnt }}"
+        - "{{ rootmnt }}"
+      ignore_errors: true
+
+    - name: Map partitions
+      command: kpartx -a -v {{ extracted_image }}
+      register: kpartx_output
+      when: not ansible_check_mode
+
+    - name: Set loop device fact
+      set_fact:
+        loop_base: "{{ kpartx_output.stdout | regex_search('loop[0-9]+') }}"
+      when: not ansible_check_mode
+
+    - name: Mount boot partition
+      mount:
+        src: "/dev/mapper/{{ loop_base }}p1"
+        path: "{{ bootmnt }}"
+        fstype: vfat
+        state: mounted
+      when: not ansible_check_mode
+
+    - name: Mount root partition
+      mount:
+        src: "/dev/mapper/{{ loop_base }}p2"
+        path: "{{ rootmnt }}"
+        fstype: ext4
+        state: mounted
+      when: not ansible_check_mode
+
+    - name: Recreate target directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "/srv/nfs/{{ target_host }}"
+        - "{{ tftp_root }}/{{ hostvars[target_host].serial }}"
+
+    - name: Copy root filesystem
+      shell: "cp -ar {{ rootmnt }}/* /srv/nfs/{{ target_host }}/"
+      when: not ansible_check_mode
+
+    - name: Remove problematic symlinks
+      file:
+        path: "/srv/nfs/{{ target_host }}/boot/{{ item }}"
+        state: absent
+      loop:
+        - overlays
+        - issue.txt
+
+    - name: Copy boot files
+      shell: "cp -ar {{ bootmnt }}/* /srv/nfs/{{ target_host }}/boot/"
+      when: not ansible_check_mode
+
+    - name: Configure fstab for bind mount
+      lineinfile:
+        path: /etc/fstab
+        regexp: "^/srv/nfs/{{ target_host }}/boot {{ tftp_root }}/{{ hostvars[target_host].serial }}"
+        line: "/srv/nfs/{{ target_host }}/boot {{ tftp_root }}/{{ hostvars[target_host].serial }} none defaults,bind 0 0"
+        state: present
+
+    - name: Configure NFS exports
+      lineinfile:
+        path: /etc/exports
+        regexp: "^/srv/nfs/{{ target_host }}"
+        line: "/srv/nfs/{{ target_host }} {{ hostvars[target_host].ansible_host }}(rw,sync,no_subtree_check,no_root_squash)"
+        state: present
+
+    - name: Perform bind mount
+      mount:
+        path: "{{ tftp_root }}/{{ hostvars[target_host].serial }}"
+        src: "/srv/nfs/{{ target_host }}/boot"
+        fstype: none
+        opts: bind
+        state: mounted
+
+    - name: Create SSH file
+      file:
+        path: "/srv/nfs/{{ target_host }}/boot/ssh"
+        state: touch
+        mode: '0644'
+
+    - name: Remove UUID entries from fstab
+      lineinfile:
+        path: "/srv/nfs/{{ target_host }}/etc/fstab"
+        regexp: "UUID"
+        state: absent
+
+    - name: Configure cmdline.txt
+      copy:
+        dest: "/srv/nfs/{{ target_host }}/boot/cmdline.txt"
+        content: "console=serial0,115200 console=tty1 root=/dev/nfs nfsroot={{ ansible_host }}:/srv/nfs/{{ target_host }},vers=3 rw ip=dhcp rootwait elevator=deadline cgroup_memory=1 cgroup_enable=memory"
+        mode: '0644'
+
+    - name: Create userconf.txt
+      copy:
+        dest: "{{ tftp_root }}/{{ hostvars[target_host].serial }}/userconf.txt"
+        content: "{{ default_username }}:{{ default_password }}"
+        mode: '0644'
+
+    - name: Restart required services      
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - rpcbind
+        - nfs-server
+
+    - name: Clean up mounts and mapped partitions
+      block:
+        - name: Unmount boot and root partitions
+          mount:
+            path: "{{ item }}"
+            state: unmounted
+          loop:
+            - "{{ bootmnt }}"
+            - "{{ rootmnt }}"
+          
+        - name: Remove temporary mount entries from fstab
+          lineinfile:
+            path: /etc/fstab
+            regexp: "{{ item }}"
+            state: absent
+          loop:
+            - "^/dev/mapper/.*{{ bootmnt | regex_escape() }}"
+            - "^/dev/mapper/.*{{ rootmnt | regex_escape() }}"
+
+        - name: Unmap partitions
+          command: kpartx -d {{ extracted_image }}
+      when: not ansible_check_mode
+
+    - name: Fix NFS directory permissions and sudo access
+      block:
+        - name: Create sudoers file for user o on each k8s master
+          copy:
+            dest: "/srv/nfs/{{ target_host }}/etc/sudoers.d/o"
+            content: "o ALL=(ALL:ALL) NOPASSWD:ALL"
+            mode: '0440'
+            validate: /usr/sbin/visudo -cf %s
+
+        - name: Set hostname
+          copy:
+            dest: "/srv/nfs/{{ target_host }}/etc/hostname"
+            content: "{{ target_host }}"
+            mode: '0644'
+
+        - name: Update hosts file
+          lineinfile:
+            path: "/srv/nfs/{{ target_host }}/etc/hosts"
+            regexp: '^127\.0\.1\.1'
+            line: "127.0.1.1\t{{ target_host }}"
+            state: present
+
+        - name: Add Raspberry Pi repository
+          copy:
+            dest: "/srv/nfs/{{ target_host }}/etc/apt/sources.list.d/raspi.list"
+            content: "deb http://archive.raspberrypi.org/debian/ bullseye main"
+            mode: '0644'
+
+        - name: Create apt preferences for iptables
+          copy:
+            dest: "/srv/nfs/{{ target_host }}/etc/apt/preferences.d/iptables"
+            content: |
+              Package: iptables
+              Pin: release n=bullseye
+              Pin-Priority: 900
+            mode: '0644'
+
+        - name: Install required packages in chroot
+          shell: |
+            chroot /srv/nfs/{{ target_host }} /bin/bash -c '
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y iptables'
+
+        - name: Remove dphys-swapfile package
+          shell: |
+            chroot /srv/nfs/{{ target_host }} /bin/bash -c '
+            DEBIAN_FRONTEND=noninteractive apt-get remove -y dphys-swapfile'
+      when: not ansible_check_mode

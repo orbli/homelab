@@ -1,0 +1,43 @@
+---
+- name: Uninstall k3s from all nodes
+  hosts: k8s_masters
+  become: true
+  tasks:
+    - name: Run k3s uninstall script
+      shell: |
+        /usr/local/bin/k3s-uninstall.sh || true
+
+    - name: Remove kernel parameters from sysctl
+      sysctl:
+        name: "{{ item.name }}"
+        state: absent
+        sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+        reload: true
+      loop:
+        - { name: 'net.bridge.bridge-nf-call-iptables' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables' }
+        - { name: 'net.ipv4.ip_forward' }
+
+    - name: Remove kubernetes sysctl config file
+      file:
+        path: /etc/sysctl.d/99-kubernetes.conf
+        state: absent
+
+    - name: Remove k3s directories and files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+        - /home/o/.kube
+        - /tmp/k3s-install.sh
+
+    - name: Unload kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - br_netfilter
+        - overlay 
