@@ -1,10 +1,29 @@
 ---
-- name: Deploy K8s Monitoring via ArgoCD
+- name: Deploy K8s Monitoring via ArgoCD (Local Repository)
   hosts: localhost
   connection: local
   gather_facts: false
   
   tasks:
+    # Initialize local git repository if not already done
+    - name: Initialize local git repository
+      command: git init
+      args:
+        chdir: /home/eli/workbench
+        creates: /home/eli/workbench/.git
+    
+    - name: Add all files to git
+      command: git add .
+      args:
+        chdir: /home/eli/workbench
+      ignore_errors: true
+    
+    - name: Create initial commit
+      command: git commit -m "Initial homelab setup"
+      args:
+        chdir: /home/eli/workbench
+      ignore_errors: true
+    
     # Ensure observability namespace exists first
     - name: Ensure observability namespace exists
       kubernetes.core.k8s:
@@ -13,7 +32,7 @@
         kind: Namespace
         state: present
 
-    - name: Apply ArgoCD Application for k8s-monitoring
+    - name: Apply ArgoCD Application for k8s-monitoring (local git)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -29,7 +48,7 @@
           spec:
             project: default
             source:
-              repoURL: https://github.com/orbli/homelab.git
+              repoURL: file:///home/eli/workbench
               targetRevision: HEAD
               path: homelab/argocd/k8s-monitoring
             destination:
