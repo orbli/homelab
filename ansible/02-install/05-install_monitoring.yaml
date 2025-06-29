@@ -1,0 +1,59 @@
+---
+- name: Deploy K8s Monitoring via ArgoCD
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  tasks:
+    - name: Apply ArgoCD Application for k8s-monitoring
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: k8s-monitoring
+            namespace: devops
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/orbli/homelab.git
+              targetRevision: HEAD
+              path: homelab/argocd/k8s-monitoring
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: observability
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+                - ServerSideApply=true
+
+    - name: Wait for ArgoCD Application to be ready
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: k8s-monitoring
+        namespace: devops
+        wait: true
+        wait_condition:
+          type: "Synced"
+          status: "True"
+        wait_timeout: 600
+
+    - name: Display k8s-monitoring ArgoCD application information
+      debug:
+        msg: |
+          K8s Monitoring ArgoCD Application deployed successfully!
+          
+          Check application status:
+          kubectl get applications -n devops k8s-monitoring
+          
+          Check deployed resources:
+          kubectl get all -n observability
+          
+          The monitoring stack will be automatically deployed and managed by ArgoCD! 

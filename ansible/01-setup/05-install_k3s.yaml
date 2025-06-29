@@ -3,6 +3,19 @@
   hosts: home-hk1-pi1
   become: true
   tags: primary
+  pre_tasks:
+    - name: Get Tailscale IP address
+      when: k3s_use_ts | default(false)
+      shell: tailscale status | grep {{ inventory_hostname }} | awk '{print $1}'
+      register: tailscale_ip
+      changed_when: false
+      become: false  # Run as regular user since tailscale status works without sudo
+
+    - name: Set Tailscale IP fact
+      when: k3s_use_ts | default(false)
+      set_fact:
+        ts_node_ip: "{{ tailscale_ip.stdout }}"
+
   tasks:
     - name: Ensure kernel modules are loaded
       modprobe:
@@ -39,11 +52,32 @@
     - block:
         - name: Install k3s as primary
           shell: |
-            INSTALL_K3S_EXEC="server --cluster-init --disable servicelb --disable traefik --flannel-backend=host-gw --bind-address 0.0.0.0 --advertise-address {{ ansible_default_ipv4.address }} --node-ip {{ ansible_default_ipv4.address }} --node-name {{ inventory_hostname }} --snapshotter=fuse-overlayfs --cluster-domain {{ cluster_domain }}" \
+            INSTALL_K3S_EXEC="\
+            server \
+            --cluster-init \
+            --disable servicelb \
+            --disable traefik \
+            --disable local-storage \
+            --write-kubeconfig-mode 644 \
+            --flannel-backend=host-gw \
+            {% if k3s_use_ts | default(false) %}\
+            --node-external-ip {{ ts_node_ip }} \
+            {% endif %}\
+            --node-name {{ inventory_hostname }} \
+            --snapshotter=fuse-overlayfs \
+            --cluster-domain {{ cluster_domain }} \
+            {% if k3s_use_ts | default(false) %}\
+            --vpn-auth=name=tailscale,joinKey={{ tailscale_oauth_client_secret }} \
+            {% endif %}" \
             sh /tmp/k3s-install.sh
           args:
             creates: /usr/local/bin/k3s
       rescue:
+        - name: Remove k3s binary if installation failed
+          file:
+            path: /usr/local/bin/k3s
+            state: absent
+
         - name: Get k3s service status
           shell: systemctl status k3s.service
           register: service_status
@@ -105,11 +139,6 @@
         mode: '0600'
         remote_src: yes
 
-    - name: Set permissions on k3s.yaml
-      file:
-        path: /etc/rancher/k3s/k3s.yaml
-        mode: '0644'
-
 - name: Install k3s on secondary nodes
   hosts: k8s_masters:!home-hk1-pi1
   become: true
@@ -117,6 +146,19 @@
   tags: secondary
   serial: 1
   order: sorted
+  pre_tasks:
+    - name: Get Tailscale IP address
+      when: k3s_use_ts | default(false)
+      shell: tailscale status | grep {{ inventory_hostname }} | awk '{print $1}'
+      register: tailscale_ip
+      changed_when: false
+      become: false  # Run as regular user since tailscale status works without sudo
+
+    - name: Set Tailscale IP fact
+      when: k3s_use_ts | default(false)
+      set_fact:
+        ts_node_ip: "{{ tailscale_ip.stdout }}"
+
   tasks:
     - name: Skip if not in correct order
       meta: end_host
@@ -181,11 +223,33 @@
     - block:
         - name: Install k3s as secondary server
           shell: |
-            INSTALL_K3S_EXEC="server --server https://{{ hostvars['home-hk1-pi1']['ansible_host'] }}:6443 --disable servicelb --disable traefik --flannel-backend=host-gw --bind-address 0.0.0.0 --advertise-address {{ ansible_default_ipv4.address }} --node-ip {{ ansible_default_ipv4.address }} --node-name {{ inventory_hostname }} --snapshotter=fuse-overlayfs --token-file /var/lib/rancher/k3s/server/token --cluster-domain {{ cluster_domain }}" \
+            INSTALL_K3S_EXEC="\
+            server \
+            --token-file /var/lib/rancher/k3s/server/token \
+            --server https://{{ hostvars['home-hk1-pi1']['ansible_host'] }}:6443 \
+            --disable servicelb \
+            --disable traefik \
+            --disable local-storage \
+            --write-kubeconfig-mode 644 \
+            --flannel-backend=host-gw \
+            {% if k3s_use_ts | default(false) %}\
+            --node-external-ip {{ ts_node_ip }} \
+            {% endif %}\
+            --node-name {{ inventory_hostname }} \
+            --snapshotter=fuse-overlayfs \
+            --cluster-domain {{ cluster_domain }} \
+            {% if k3s_use_ts | default(false) %}\
+            --vpn-auth=name=tailscale,joinKey={{ tailscale_oauth_client_secret }} \
+            {% endif %}" \
             sh /tmp/k3s-install.sh
           args:
             creates: /usr/local/bin/k3s
       rescue:
+        - name: Remove k3s binary if installation failed
+          file:
+            path: /usr/local/bin/k3s
+            state: absent
+
         - name: Get k3s service status
           shell: systemctl status k3s.service
           register: service_status
@@ -204,8 +268,3 @@
             mount | grep overlay
           register: overlay_status
           failed_when: false
-
-    - name: Set permissions on k3s.yaml
-      file:
-        path: /etc/rancher/k3s/k3s.yaml
-        mode: '0644'

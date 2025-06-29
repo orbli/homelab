@@ -1,0 +1,171 @@
+---
+- name: Fix K3s etcd migration issues
+  hosts: k8s_masters
+  become: true
+  vars:
+    old_network: "192.168.86"
+    new_network: "192.168.88"
+    old_primary_ip: "192.168.86.41"
+    new_primary_ip: "192.168.88.41"
+    
+  tasks:
+    - name: Ensure k3s is stopped
+      systemd:
+        name: k3s
+        state: stopped
+      failed_when: false
+
+    - name: Fix etcd member database on primary node
+      when: inventory_hostname == 'home-hk1-pi1'
+      block:
+        - name: Find and fix etcd member database files
+          shell: |
+            find /var/lib/rancher/k3s/server/db/etcd -type f \( -name "*.db" -o -name "*.wal" -o -name "*.snap" \) -exec strings {} \; | grep -q "{{ old_network }}" && echo "OLD_IPS_FOUND" || echo "NO_OLD_IPS"
+          register: etcd_check
+          failed_when: false
+
+        - name: Show etcd check result
+          debug:
+            msg: "Etcd database check: {{ etcd_check.stdout }}"
+
+        - name: Fix binary etcd database files (aggressive approach)
+          shell: |
+            find /var/lib/rancher/k3s/server/db/etcd -type f \( -name "*.db" -o -name "*.wal" -o -name "*.snap" \) -exec sed -i 's/{{ old_network }}/{{ new_network }}/g' {} \;
+          failed_when: false
+
+    - name: Comprehensive IP address replacement in all k3s files
+      shell: |
+        find /var/lib/rancher/k3s -type f \( -name "*.json" -o -name "*.yaml" -o -name "*.yml" -o -name "*.conf" -o -name "*.cfg" \) -exec sed -i 's/{{ old_network }}/{{ new_network }}/g' {} \;
+        find /etc/rancher/k3s -type f \( -name "*.json" -o -name "*.yaml" -o -name "*.yml" -o -name "*.conf" -o -name "*.cfg" \) -exec sed -i 's/{{ old_network }}/{{ new_network }}/g' {} \;
+      failed_when: false
+
+    - name: Fix etcd member configuration files
+      shell: |
+        find /var/lib/rancher/k3s/server -name "*member*" -type f -exec sed -i 's/{{ old_network }}/{{ new_network }}/g' {} \;
+        find /var/lib/rancher/k3s/server/db -name "*member*" -type f -exec sed -i 's/{{ old_network }}/{{ new_network }}/g' {} \;
+      failed_when: false
+
+    - name: Fix etcd cluster state files
+      shell: |
+        if [ -f /var/lib/rancher/k3s/server/db/state.json ]; then
+          sed -i 's/{{ old_network }}/{{ new_network }}/g' /var/lib/rancher/k3s/server/db/state.json
+        fi
+        if [ -f /var/lib/rancher/k3s/server/db/etcd/member/raft.conf ]; then
+          sed -i 's/{{ old_network }}/{{ new_network }}/g' /var/lib/rancher/k3s/server/db/etcd/member/raft.conf
+        fi
+      failed_when: false
+
+    - name: Remove cluster.yaml to force regeneration
+      file:
+        path: /var/lib/rancher/k3s/server/manifests/cluster.yaml
+        state: absent
+      failed_when: false
+
+- name: Reset etcd cluster (nuclear option)
+  hosts: home-hk1-pi1
+  become: true
+  tasks:
+    - name: Check if etcd bootstrap is needed
+      stat:
+        path: /var/lib/rancher/k3s/server/db/etcd
+      register: etcd_dir
+
+    - name: Backup and reset etcd database (if all else fails)
+      when: etcd_dir.stat.exists
+      block:
+        - name: Create etcd backup
+          shell: |
+            cp -r /var/lib/rancher/k3s/server/db/etcd /tmp/etcd-backup-$(date +%Y%m%d-%H%M%S)
+          failed_when: false
+
+        - name: Remove etcd data to force cluster re-init
+          file:
+            path: /var/lib/rancher/k3s/server/db/etcd
+            state: absent
+          when: false  # Set to true only if needed
+
+        - name: Remove agent data on secondary nodes (if etcd was reset)
+          shell: rm -rf /var/lib/rancher/k3s/agent/client-*
+          delegate_to: "{{ item }}"
+          loop: "{{ groups['k8s_masters'] }}"
+          when: false  # Set to true only if needed
+          failed_when: false
+
+- name: Start services with proper sequencing
+  hosts: k8s_masters
+  become: true
+  serial: 1
+  order: sorted
+  tasks:
+    - name: Start primary node first
+      when: inventory_hostname == 'home-hk1-pi1'
+      systemd:
+        name: k3s
+        state: started
+
+    - name: Wait for primary node API
+      when: inventory_hostname == 'home-hk1-pi1'
+      wait_for:
+        port: 6443
+        host: "{{ ansible_default_ipv4.address }}"
+        timeout: 180
+
+    - name: Check primary node status
+      when: inventory_hostname == 'home-hk1-pi1'
+      shell: |
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl get nodes
+      register: primary_status
+      retries: 5
+      delay: 10
+      until: primary_status.rc == 0
+      failed_when: false
+
+    - name: Show primary node status
+      when: inventory_hostname == 'home-hk1-pi1'
+      debug:
+        msg: "{{ primary_status.stdout_lines if primary_status.rc == 0 else 'Primary node not ready: ' + primary_status.stderr }}"
+
+    - name: Start secondary nodes
+      when: inventory_hostname != 'home-hk1-pi1'
+      systemd:
+        name: k3s
+        state: started
+
+    - name: Wait for secondary nodes
+      when: inventory_hostname != 'home-hk1-pi1'
+      wait_for:
+        timeout: 60
+
+- name: Final cluster verification
+  hosts: home-hk1-pi1
+  become: true
+  tasks:
+    - name: Final cluster check
+      shell: |
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        echo "=== NODES ==="
+        kubectl get nodes -o wide
+        echo "=== SYSTEM PODS ==="
+        kubectl get pods -n kube-system
+      register: final_status
+      retries: 3
+      delay: 30
+      until: final_status.rc == 0
+      failed_when: false
+
+    - name: Show final status
+      debug:
+        msg: "{{ final_status.stdout_lines if final_status.rc == 0 else 'Cluster still not ready' }}"
+
+    - name: Update local kubeconfig
+      replace:
+        path: "{{ ansible_env.HOME }}/.kube/config"
+        regexp: 'server: https://{{ old_primary_ip }}:'
+        replace: 'server: https://{{ new_primary_ip }}:'
+      delegate_to: localhost
+      become: false
+      failed_when: false
+      vars:
+        old_primary_ip: "192.168.86.41"
+        new_primary_ip: "192.168.88.41" 

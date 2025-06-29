@@ -1,0 +1,115 @@
+---
+- name: Deploy Cloudflared
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Create networking namespace
+      kubernetes.core.k8s:
+        name: networking
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create cloudflared ConfigMap
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: cloudflared
+            namespace: networking
+          data:
+            config.yaml: |
+              # Name of the tunnel you want to run
+              tunnel: home-hk1-cluster-tunnel
+              credentials-file: /etc/cloudflared/creds/credentials.json
+              # Serves the metrics server under /metrics and the readiness server under /ready
+              metrics: 0.0.0.0:2000
+              # Autoupdates applied in a k8s pod will be lost when the pod is removed or restarted, so
+              # autoupdate doesn't make sense in Kubernetes. However, outside of Kubernetes, we strongly
+              # recommend using autoupdate.
+              no-autoupdate: true
+              # The `ingress` block tells cloudflared which local service to route incoming
+              # requests to. For more about ingress rules, see
+              # https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configuration/ingress
+              #
+              # Remember, these rules route traffic from cloudflared to a local service. To route traffic
+              # from the internet to cloudflared, run `cloudflared tunnel route dns <tunnel> <hostname>`.
+              # E.g. `cloudflared tunnel route dns example-tunnel tunnel.example.com`.
+              ingress:
+              - hostname: mgroupav.orbb.li
+                service: http://tube-jellyfin.mgroup.svc.home-hk1-cluster.orbb.li
+                originRequest:
+                  noTLSVerify: true
+              - hostname: av.orbb.li
+                service: http://tube-jellyfin.mgroup.svc.home-hk1-cluster.orbb.li
+                originRequest:
+                  noTLSVerify: true
+              - hostname: keycloak-lab.orbb.li
+                service: http://keycloak.iam.svc.home-hk1-cluster.orbb.li
+                originRequest:
+                  noTLSVerify: true
+              - hostname: grafana-lab.orbb.li
+                service: http://grafana.observability.svc.home-hk1-cluster.orbb.li
+                originRequest:
+                  noTLSVerify: true
+              - service: http_status:404
+        state: present
+
+    - name: Deploy cloudflared
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: cloudflared
+            namespace: networking
+          spec:
+            selector:
+              matchLabels:
+                app: cloudflared
+            replicas: 2
+            template:
+              metadata:
+                labels:
+                  app: cloudflared
+              spec:
+                containers:
+                - name: cloudflared
+                  image: cloudflare/cloudflared:1730-40dc601e9d71
+                  args:
+                  - tunnel
+                  - --config
+                  - /etc/cloudflared/config/config.yaml
+                  - run
+                  livenessProbe:
+                    httpGet:
+                      path: /ready
+                      port: 2000
+                    failureThreshold: 1
+                    initialDelaySeconds: 10
+                    periodSeconds: 10
+                  volumeMounts:
+                  - name: config
+                    mountPath: /etc/cloudflared/config
+                    readOnly: true
+                  - name: creds
+                    mountPath: /etc/cloudflared/creds
+                    readOnly: true
+                volumes:
+                - name: creds
+                  secret:
+                    secretName: tunnel-credentials
+                - name: config
+                  configMap:
+                    name: cloudflared
+                    items:
+                    - key: config.yaml
+                      path: config.yaml
+        state: present 
+
+# after cloudflared deploy, do the followings:
+# 1. create orbb.li realm
+# 2. import gcp "API & Services" -> "Credentials" into keycloak IdP
+# 3. create mail@orbb.li user by logging in

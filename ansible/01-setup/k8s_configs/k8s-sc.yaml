@@ -7,7 +7,7 @@ metadata:
   name: k8s-csi
 provisioner: nfs.csi.k8s.io
 parameters:
-  server: 192.168.86.41
+  server: 192.168.88.41
   share: /srv/k8s
 reclaimPolicy: Delete
 volumeBindingMode: Immediate

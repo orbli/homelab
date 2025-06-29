@@ -2,11 +2,11 @@
 - name: Install NFS CSI Driver using Helm
   hosts: localhost
   connection: local
-  pre_tasks:
-    - name: Install required Python packages
-      pip:
-        name: kubernetes>=12.0.0
-        state: present
+  # pre_tasks:
+  #   - name: Install required Python packages
+  #     pip:
+  #       name: kubernetes>=12.0.0
+  #       state: present
 
   tasks:
     - name: Add csi-driver-nfs Helm repository
@@ -23,6 +23,7 @@
         chart_version: v4.5.0
         state: present
         wait: true
+        timeout: 600s
 
     - name: Wait for CSI controller pod to be ready
       kubernetes.core.k8s_info:
@@ -35,7 +36,7 @@
         controller_pods.resources is defined
         and controller_pods.resources | length > 0
         and (controller_pods.resources | map(attribute='status.phase') | list | unique == ['Running'])
-      retries: 6
+      retries: 60
       delay: 10
 
     - name: Wait for CSI node pods to be ready

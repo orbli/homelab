@@ -65,7 +65,7 @@
      ansible.builtin.copy:
        dest: /etc/dnsmasq.conf
        content: |
-         dhcp-range=192.168.86.255,proxy
+         dhcp-range=192.168.88.255,proxy
          log-dhcp
          enable-tftp
          tftp-root=/srv/tftpboot

@@ -1,0 +1,188 @@
+---
+- name: Migrate K3s cluster to new network addresses
+  hosts: k8s_masters
+  become: true
+  serial: 1
+  order: sorted
+  vars:
+    old_primary_ip: "192.168.86.41"
+    new_primary_ip: "192.168.88.41"
+    cluster_domain: "{{ hostvars['home-hk1-pi1']['cluster_domain'] | default('cluster.local') }}"
+    
+  tasks:
+    - name: Stop k3s service on all nodes
+      systemd:
+        name: k3s
+        state: stopped
+        enabled: true
+      failed_when: false
+
+    - name: Wait for k3s to fully stop
+      wait_for:
+        timeout: 30
+
+    - name: Update server configuration on primary node
+      when: inventory_hostname == 'home-hk1-pi1'
+      block:
+        - name: Backup existing k3s data
+          archive:
+            path: /var/lib/rancher/k3s
+            dest: /tmp/k3s-backup-{{ ansible_date_time.epoch }}.tar.gz
+            
+        - name: Update kubeconfig server address
+          replace:
+            path: /etc/rancher/k3s/k3s.yaml
+            regexp: 'server: https://{{ old_primary_ip }}:'
+            replace: 'server: https://{{ new_primary_ip }}:'
+          failed_when: false
+
+        - name: Update kubeconfig server address (localhost variants)
+          replace:
+            path: /etc/rancher/k3s/k3s.yaml
+            regexp: 'server: https://(127\.0\.0\.1|localhost):'
+            replace: 'server: https://{{ new_primary_ip }}:'
+          failed_when: false
+
+    - name: Update secondary node configurations
+      when: inventory_hostname != 'home-hk1-pi1'
+      block:
+        - name: Backup existing k3s data
+          archive:
+            path: /var/lib/rancher/k3s
+            dest: /tmp/k3s-backup-{{ ansible_date_time.epoch }}.tar.gz
+
+        - name: Update server URL in node configuration files
+          find:
+            paths: /var/lib/rancher/k3s/agent
+            patterns: "*.json"
+            recurse: yes
+          register: agent_files
+
+        - name: Replace old server IP in agent files
+          replace:
+            path: "{{ item.path }}"
+            regexp: '{{ old_primary_ip }}'
+            replace: '{{ new_primary_ip }}'
+          loop: "{{ agent_files.files }}"
+          failed_when: false
+
+        - name: Update etcd member list (if using embedded etcd)
+          shell: |
+            find /var/lib/rancher/k3s/server/db -name "*.json" -exec sed -i 's/{{ old_primary_ip }}/{{ new_primary_ip }}/g' {} \;
+          failed_when: false
+
+    - name: Start k3s service on primary node first
+      when: inventory_hostname == 'home-hk1-pi1'
+      systemd:
+        name: k3s
+        state: started
+        enabled: true
+
+    - name: Wait for primary node to be ready
+      when: inventory_hostname == 'home-hk1-pi1'
+      wait_for:
+        port: 6443
+        host: "{{ ansible_default_ipv4.address }}"
+        timeout: 300
+
+    - name: Start k3s service on secondary nodes
+      when: inventory_hostname != 'home-hk1-pi1'
+      systemd:
+        name: k3s
+        state: started
+        enabled: true
+
+    - name: Wait for secondary nodes to start
+      when: inventory_hostname != 'home-hk1-pi1'
+      wait_for:
+        timeout: 60
+
+    - name: Verify cluster connectivity
+      when: inventory_hostname == 'home-hk1-pi1'
+      shell: |
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl get nodes -o wide
+      register: cluster_status
+      retries: 5
+      delay: 30
+      until: cluster_status.rc == 0
+
+    - name: Display cluster status
+      when: inventory_hostname == 'home-hk1-pi1'
+      debug:
+        msg: "{{ cluster_status.stdout_lines }}"
+
+- name: Update node IP addresses in Kubernetes
+  hosts: home-hk1-pi1
+  become: true
+  tasks:
+    - name: Get current nodes with old IPs
+      shell: |
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}'
+      register: current_nodes
+      
+    - name: Display current node IPs
+      debug:
+        msg: "Current node IPs: {{ current_nodes.stdout_lines }}"
+
+    - name: Patch node internal IPs (requires node restart)
+      shell: |
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl patch node {{ item }} -p '{"status":{"addresses":[{"type":"InternalIP","address":"{{ hostvars[item].ansible_default_ipv4.address }}"}]}}'
+      loop: "{{ groups['k8s_masters'] }}"
+      failed_when: false
+
+- name: Update local kubeconfig
+  hosts: localhost
+  connection: local
+  become: false
+  tasks:
+    - name: Update local kubeconfig with new server IP
+      replace:
+        path: "{{ ansible_env.HOME }}/.kube/config"
+        regexp: 'server: https://{{ old_primary_ip }}:'
+        replace: 'server: https://{{ new_primary_ip }}:'
+      vars:
+        old_primary_ip: "192.168.86.41"
+        new_primary_ip: "192.168.88.41"
+      failed_when: false
+
+    - name: Test cluster connectivity
+      shell: kubectl get nodes
+      register: kubectl_test
+      failed_when: false
+
+    - name: Display connectivity test result
+      debug:
+        msg: "{{ kubectl_test.stdout_lines if kubectl_test.rc == 0 else 'Failed to connect: ' + kubectl_test.stderr }}"
+
+- name: Final verification and cleanup
+  hosts: k8s_masters
+  become: true
+  tasks:
+    - name: Verify k3s service status
+      systemd:
+        name: k3s
+      register: k3s_status
+
+    - name: Display service status
+      debug:
+        msg: "K3s service on {{ inventory_hostname }}: {{ k3s_status.status.ActiveState }}"
+
+    - name: Clean up old network references in CNI config
+      shell: |
+        find /var/lib/rancher/k3s/agent/etc/cni/net.d -name "*.conflist" -exec grep -l "192.168.86" {} \; | xargs -r sed -i 's/192.168.86/192.168.88/g'
+      failed_when: false
+
+    - name: Restart k3s to ensure all configurations are applied
+      systemd:
+        name: k3s
+        state: restarted
+      when: inventory_hostname != 'home-hk1-pi1'
+
+    - name: Restart primary node last
+      systemd:
+        name: k3s
+        state: restarted
+      when: inventory_hostname == 'home-hk1-pi1' 

@@ -2,7 +2,7 @@ apiVersion: tailscale.com/v1alpha1
 kind: Connector
 metadata:
   name: home-hk1-cluster-connector
-  namespace: tailscale
+  namespace: networking
 spec:
   hostname: home-hk1-cluster-connector
   exitNode: true

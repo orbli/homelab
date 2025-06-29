@@ -26,7 +26,7 @@
       vars:
         ansible_user: o
         ansible_connection: ssh
-        ansible_host: 192.168.86.41
+        ansible_host: 192.168.88.41
 
     - name: Fetch k3s CA cert from remote
       ansible.builtin.fetch:
@@ -38,13 +38,13 @@
       vars:
         ansible_user: o
         ansible_connection: ssh
-        ansible_host: 192.168.86.41
+        ansible_host: 192.168.88.41
 
     - name: Replace server IP in k3s.yaml
       ansible.builtin.replace:
         path: /tmp/k3s.yaml
-        regexp: 'server: https://0.0.0.0:'
-        replace: 'server: https://192.168.86.41:'
+        regexp: 'server: https://(0.0.0.0|127.0.0.1):'
+        replace: 'server: https://192.168.88.41:'
 
     - name: Update certificate-authority in k3s.yaml
       ansible.builtin.replace:

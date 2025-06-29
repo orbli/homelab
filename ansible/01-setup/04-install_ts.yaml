@@ -1,6 +1,6 @@
 ---
-- name: Install Tailscale
-  hosts: shared_drive
+- name: Install Tailscale on all nodes
+  hosts: k8s_masters,shared_drive
   become: true
   tasks:
     - name: Add Tailscale GPG key
@@ -30,6 +30,14 @@
         state: started
         enabled: yes
 
+    - name: Enable SSH in Tailscale
+      ansible.builtin.command: tailscale set --ssh
+      changed_when: true
+
+- name: Configure Tailscale on shared drive
+  hosts: shared_drive
+  become: true
+  tasks:
     - name: Connect to Tailscale network with SSH enabled
       ansible.builtin.shell: |
         tailscale up --ssh --accept-dns=false > /tmp/tailscale_output 2>&1 & echo $! > /tmp/tailscale.pid
@@ -42,6 +50,15 @@
       ansible.builtin.debug:
         msg: "{{ tailscale_result.stdout_lines | map('replace', '\t', '') | list }}"
 
+    - name: Display Tailscale status
+      ansible.builtin.shell: tailscale status
+      register: tailscale_status
+      changed_when: false
+
+    - name: Show Tailscale status output
+      ansible.builtin.debug:
+        msg: "{{ tailscale_status.stdout_lines }}"
+
     - name: Wait for Tailscale up to complete
       ansible.builtin.shell: |
         if [ -f /tmp/tailscale.pid ]; then
@@ -52,36 +69,3 @@
           rm -f /tmp/tailscale.pid /tmp/tailscale_output
         fi
       changed_when: false
-
-- name: Install Tailscale Operator in Kubernetes
-  hosts: localhost
-  connection: local
-  vars:
-    tailscale_oauth_client_id: "{{ hostvars['sd1']['tailscale_oauth_client_id'] }}"
-    tailscale_oauth_client_secret: "{{ hostvars['sd1']['tailscale_oauth_client_secret'] }}"
-    tailscale_operator_hostname: "{{ hostvars['sd1']['tailscale_operator_hostname'] }}"
-  tasks:
-    - name: Add Tailscale Helm repository
-      kubernetes.core.helm_repository:
-        name: tailscale
-        repo_url: https://pkgs.tailscale.com/helmcharts
-
-    - name: Install Tailscale Operator
-      kubernetes.core.helm:
-        name: tailscale-operator
-        chart_ref: tailscale/tailscale-operator
-        release_namespace: tailscale
-        create_namespace: true
-        wait: true
-        values:
-          oauth:
-            clientId: "{{ tailscale_oauth_client_id }}"
-            clientSecret: "{{ tailscale_oauth_client_secret }}"
-          operatorConfig:
-            hostname: "{{ tailscale_operator_hostname }}"
-
-    - name: Apply Tailscale Connector configuration
-      kubernetes.core.k8s:
-        state: present
-        src: k8s_configs/ts-connector.yaml
-

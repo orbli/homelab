@@ -1,0 +1,55 @@
+grafana:
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Loki
+          type: loki
+          url: http://loki-grafana-loki-gateway.observability.svc.home-hk1-cluster.orbb.li/
+          access: proxy
+          basicaAuth: false
+  grafana.ini:
+    server:
+      root_url: "https://grafana-lab.orbb.li" 
+      router_logging: true
+      enable_gzip: true
+    # log:
+    #   level: debug
+    auth.generic_oauth:
+      enabled: true
+      name: Keycloak
+      allow_sign_up: true
+      auto_login: true
+      client_id: grafanasso
+      client_secret: $__file{/etc/secrets/gf_keycloak_secret}
+      scopes: openid profile email roles offline_access
+      auth_url: https://keycloak-lab.orbb.li/realms/orbb.li/protocol/openid-connect/auth?kc_idp_hint=google
+      token_url: https://keycloak-lab.orbb.li/realms/orbb.li/protocol/openid-connect/token
+      api_url: https://keycloak-lab.orbb.li/realms/orbb.li/protocol/openid-connect/userinfo
+      signout_redirect_url: https://keycloak-lab.orbb.li/realms/orbb.li/protocol/openid-connect/logout?post_logout_redirect_uri=https://grafana-lab.orbb.li
+      role_attribute_strict: true
+      role_attribute_path: (contains(resource_access.grafanasso.roles[], 'grafanaadmin') && 'GrafanaAdmin' || contains(resource_access.grafanasso.roles[], 'admin') && 'Admin' || contains(resource_access.grafanasso.roles[], 'editor') && 'Editor' || 'Viewer')
+      allow_assign_grafana_admin: true
+      email_attribute_path: email
+      name_attribute_path: full_name
+      login_attribute_path: username
+    security:
+      disable_initial_admin_creation: true
+  assertNoLeakedSecrets: false
+  extraSecretMounts:
+    - name: grafana-oauth-secret
+      mountPath: /etc/secrets/gf_keycloak_secret
+      secretName: grafana-oauth-secret
+      readOnly: true
+      subPath: "client-secret"
+  sidecar:
+    dashboards:
+      folderAnnotation: grafana-dashboard-folder
+      provider:
+        folder: k8s-observability
+      annotations:
+        grafana-dashboard-folder: k8s-observability
+  operator:
+    folder: k8s-observability
+
+# kubectl -n observability create secret generic grafana-oauth-secret --from-literal=client-secret='abcdef'

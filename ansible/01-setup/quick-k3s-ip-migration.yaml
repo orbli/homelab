@@ -1,0 +1,109 @@
+---
+- name: Quick K3s IP migration (no backup)
+  hosts: k8s_masters
+  become: true
+  serial: 1
+  order: sorted
+  vars:
+    old_primary_ip: "192.168.86.41"
+    new_primary_ip: "192.168.88.41"
+    
+  tasks:
+    - name: Stop k3s service on all nodes
+      systemd:
+        name: k3s
+        state: stopped
+      failed_when: false
+
+    - name: Update primary node configuration
+      when: inventory_hostname == 'home-hk1-pi1'
+      block:
+        - name: Update kubeconfig server address
+          replace:
+            path: /etc/rancher/k3s/k3s.yaml
+            regexp: 'server: https://{{ old_primary_ip }}:'
+            replace: 'server: https://{{ new_primary_ip }}:'
+          failed_when: false
+
+        - name: Update kubeconfig localhost references
+          replace:
+            path: /etc/rancher/k3s/k3s.yaml
+            regexp: 'server: https://(127\.0\.0\.1|localhost):'
+            replace: 'server: https://{{ new_primary_ip }}:'
+          failed_when: false
+
+        - name: Update etcd database files
+          shell: find /var/lib/rancher/k3s/server/db -name "*.json" -exec sed -i 's/{{ old_primary_ip }}/{{ new_primary_ip }}/g' {} \;
+          failed_when: false
+
+    - name: Update secondary node configurations
+      when: inventory_hostname != 'home-hk1-pi1'
+      block:
+        - name: Update agent configuration files
+          shell: find /var/lib/rancher/k3s/agent -name "*.json" -exec sed -i 's/{{ old_primary_ip }}/{{ new_primary_ip }}/g' {} \;
+          failed_when: false
+
+        - name: Update server database files
+          shell: find /var/lib/rancher/k3s/server -name "*.json" -exec sed -i 's/{{ old_primary_ip }}/{{ new_primary_ip }}/g' {} \;
+          failed_when: false
+
+    - name: Update CNI configuration
+      shell: find /var/lib/rancher/k3s/agent/etc/cni/net.d -name "*.conflist" -exec grep -l "192.168.86" {} \; | xargs -r sed -i 's/192\.168\.86/192.168.88/g'
+      failed_when: false
+
+    - name: Start primary node first
+      when: inventory_hostname == 'home-hk1-pi1'
+      systemd:
+        name: k3s
+        state: started
+
+    - name: Wait for primary node
+      when: inventory_hostname == 'home-hk1-pi1'
+      wait_for:
+        port: 6443
+        timeout: 120
+
+    - name: Start secondary nodes
+      when: inventory_hostname != 'home-hk1-pi1'
+      systemd:
+        name: k3s
+        state: started
+
+- name: Quick verification
+  hosts: home-hk1-pi1
+  become: true
+  tasks:
+    - name: Check cluster status
+      shell: |
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl get nodes -o wide
+      register: cluster_status
+      retries: 3
+      delay: 15
+      until: cluster_status.rc == 0
+      failed_when: false
+
+    - name: Show cluster status
+      debug:
+        msg: "{{ cluster_status.stdout_lines if cluster_status.rc == 0 else 'Cluster not ready yet' }}"
+
+- name: Update local kubeconfig
+  hosts: localhost
+  connection: local
+  become: false
+  tasks:
+    - name: Update local kubeconfig IP
+      replace:
+        path: "{{ ansible_env.HOME }}/.kube/config"
+        regexp: 'server: https://192\.168\.86\.41:'
+        replace: 'server: https://192.168.88.41:'
+      failed_when: false
+
+    - name: Test local connectivity
+      shell: kubectl get nodes
+      register: local_test
+      failed_when: false
+
+    - name: Show connectivity result
+      debug:
+        msg: "{{ 'SUCCESS: ' + local_test.stdout if local_test.rc == 0 else 'FAILED: ' + local_test.stderr }}" 
