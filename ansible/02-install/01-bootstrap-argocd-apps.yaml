@@ -1,0 +1,155 @@
+---
+- name: Bootstrap ArgoCD Applications from Git
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    repo_url: "https://github.com/orbli/homelab.git"
+    gitops_namespace: gitops
+    
+  tasks:
+    # First, ensure Helm repositories are configured
+    - name: Apply Helm repository configurations
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ playbook_dir }}/../../kubernetes/gitops/bootstrap/helm-repositories.yaml"
+    
+    # Bootstrap app to manage namespaces and other prerequisites
+    - name: Create Bootstrap Application
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: bootstrap
+            namespace: "{{ gitops_namespace }}"
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: "{{ repo_url }}"
+              targetRevision: HEAD
+              path: kubernetes/gitops/bootstrap
+            destination:
+              server: https://kubernetes.default.svc
+            syncPolicy:
+              automated:
+                prune: false  # Never auto-prune namespaces!
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=false
+                - ServerSideApply=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+    
+    - name: Wait for bootstrap to sync
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: bootstrap
+        namespace: "{{ gitops_namespace }}"
+        wait: true
+        wait_condition:
+          type: Synced
+          status: "True"
+        wait_timeout: 120
+      register: bootstrap_status
+      ignore_errors: yes
+    
+    # Individual applications - deployed one by one for testing
+    - name: Create Keycloak Application
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ playbook_dir }}/../../kubernetes/gitops/apps/keycloak.yaml"
+      tags: [keycloak]
+    
+    - name: Create Cloudflared Application
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ playbook_dir }}/../../kubernetes/gitops/apps/cloudflared.yaml"
+      tags: [cloudflared]
+    
+    # For future use - app of apps pattern
+    - name: Create Root Application (App of Apps) - OPTIONAL
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: root-applications
+            namespace: "{{ gitops_namespace }}"
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: "{{ repo_url }}"
+              targetRevision: HEAD
+              path: kubernetes/gitops/apps
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ gitops_namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=false
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+      when: false  # Disabled by default - enable after individual testing
+      tags: [app-of-apps]
+    
+    - name: Display Application Status
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        namespace: "{{ gitops_namespace }}"
+      register: all_apps
+    
+    - name: Show deployment summary
+      debug:
+        msg: |
+          ========================================
+          ArgoCD Applications Bootstrap Complete!
+          ========================================
+          
+          Applications created:
+          {% for app in all_apps.resources %}
+          - {{ app.metadata.name }}:
+            Sync: {{ app.status.sync.status | default('Pending') }}
+            Health: {{ app.status.health.status | default('Unknown') }}
+          {% endfor %}
+          
+          Next Steps:
+          1. Check application status:
+             kubectl get applications -n {{ gitops_namespace }}
+          
+          2. Sync an application manually:
+             argocd app sync <app-name> --core
+          
+          3. View application details:
+             kubectl describe application <app-name> -n {{ gitops_namespace }}
+          
+          4. Watch sync progress:
+             kubectl get applications -n {{ gitops_namespace }} -w
+          
+          To deploy specific apps only:
+          - ansible-playbook {{ playbook_dir }}/01-bootstrap-argocd-apps.yaml --tags keycloak
+          - ansible-playbook {{ playbook_dir }}/01-bootstrap-argocd-apps.yaml --tags cloudflared
+          
+          To enable app-of-apps pattern (after testing):
+          - Edit the playbook and set 'when: true' for the root application
+          ========================================
