@@ -1,0 +1,72 @@
+---
+- name: Install Headless ArgoCD using Helm
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  tasks:
+    - name: Add ArgoProj Helm repository
+      kubernetes.core.helm_repository:
+        name: argo
+        repo_url: https://argoproj.github.io/argo-helm
+        state: present
+    
+    - name: Create devops namespace
+      kubernetes.core.k8s:
+        name: devops
+        api_version: v1
+        kind: Namespace
+        state: present
+    
+    - name: Install Headless ArgoCD using Helm chart
+      kubernetes.core.helm:
+        name: argocd
+        chart_ref: argo/argo-cd
+        chart_version: "8.0.17"
+        release_namespace: devops
+        create_namespace: true
+        state: present
+        timeout: 10m0s
+        wait: true
+        values_files:
+          - "{{ playbook_dir }}/../../kubernetes/namespaces/devops/values-argocd-headless.yaml"
+    
+    - name: Wait for ArgoCD controller to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: devops
+        label_selectors:
+          - app.kubernetes.io/name=argocd-application-controller
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 300
+    
+    - name: Get initial admin password
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: argocd-initial-admin-secret
+        namespace: devops
+      register: admin_secret
+      until: admin_secret.resources | length > 0
+      retries: 10
+      delay: 5
+    
+    - name: Display admin password
+      debug:
+        msg: |
+          ArgoCD Headless Installation Complete!
+          
+          Initial admin password: {{ (admin_secret.resources[0].data.password | b64decode) if admin_secret.resources else 'Secret not found' }}
+          
+          To access ArgoCD API:
+          kubectl port-forward -n devops svc/argocd-server 8080:80
+          
+          Then use ArgoCD CLI:
+          argocd login localhost:8080 --username admin --password <password>
+          
+          For programmatic access, use the gRPC endpoint directly.
+      when: admin_secret.resources | length > 0

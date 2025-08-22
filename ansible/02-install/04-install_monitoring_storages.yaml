@@ -24,6 +24,18 @@
         kind: Namespace
         state: present
 
+    - name: Install Loki using Helm chart
+      kubernetes.core.helm:
+        name: loki
+        chart_ref: bitnami/grafana-loki
+        release_namespace: observability
+        create_namespace: false
+        state: present
+        timeout: 10m0s
+        wait: true
+        values_files:
+          - "{{ playbook_dir }}/monitoring-values/loki-values.yaml"
+
     - name: Read Grafana OAuth client secret from file
       slurp:
         src: "{{ playbook_dir }}/../secrets/grafana-oauth-secret"
@@ -53,18 +65,6 @@
         wait: true
         values_files:
           - "{{ playbook_dir }}/monitoring-values/grafana-values.yaml"
-
-    - name: Install Loki using Helm chart
-      kubernetes.core.helm:
-        name: loki
-        chart_ref: bitnami/grafana-loki
-        release_namespace: observability
-        create_namespace: false
-        state: present
-        timeout: 10m0s
-        wait: true
-        values_files:
-          - "{{ playbook_dir }}/monitoring-values/loki-values.yaml"
 
     - name: Display access information
       debug:

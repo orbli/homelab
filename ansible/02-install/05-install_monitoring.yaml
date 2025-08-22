@@ -1,10 +1,17 @@
 ---
-- name: Deploy K8s Monitoring via ArgoCD
+- name: Deploy K8s Monitoring via Helm
   hosts: localhost
   connection: local
   gather_facts: false
   
   tasks:
+    # Add Grafana Helm repository
+    - name: Add Grafana Helm repository
+      kubernetes.core.helm_repository:
+        name: grafana
+        repo_url: https://grafana.github.io/helm-charts
+        state: present
+
     # Ensure observability namespace exists first
     - name: Ensure observability namespace exists
       kubernetes.core.k8s:
@@ -13,72 +20,37 @@
         kind: Namespace
         state: present
 
-    - name: Apply ArgoCD Application for k8s-monitoring
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: argoproj.io/v1alpha1
-          kind: Application
-          metadata:
-            name: k8s-monitoring
-            namespace: devops
-            finalizers:
-              - resources-finalizer.argocd.argoproj.io
-            annotations:
-              argocd.argoproj.io/sync-wave: "1"
-          spec:
-            project: default
-            source:
-              repoURL: https://github.com/orbli/homelab.git
-              targetRevision: HEAD
-              path: homelab/argocd/k8s-monitoring
-            destination:
-              server: https://kubernetes.default.svc
-              namespace: observability
-            syncPolicy:
-              automated:
-                prune: true
-                selfHeal: true
-              syncOptions:
-                - CreateNamespace=true
-                - ServerSideApply=true
-                - RespectIgnoreDifferences=true
-
-    - name: Wait for ArgoCD Application to be ready
-      kubernetes.core.k8s_info:
-        api_version: argoproj.io/v1alpha1
-        kind: Application
+    - name: Install k8s-monitoring using Helm chart
+      kubernetes.core.helm:
         name: k8s-monitoring
-        namespace: devops
+        chart_ref: grafana/k8s-monitoring
+        chart_version: "3.1.0"
+        release_namespace: observability
+        create_namespace: false
+        state: present
+        timeout: 10m0s
         wait: true
-        wait_condition:
-          type: "Synced"
-          status: "True"
-        wait_timeout: 600
-      ignore_errors: true
+        values_files:
+          - "{{ playbook_dir }}/monitoring-values/k8s-monitoring-values.yml"
 
-    - name: Display k8s-monitoring ArgoCD application information
+    - name: Display k8s-monitoring deployment information
       debug:
         msg: |
-          K8s Monitoring ArgoCD Application deployment completed!
+          K8s Monitoring Helm deployment completed!
           
-          Check application status:
-          kubectl get applications -n devops k8s-monitoring
+          Check Helm release status:
+          helm list -n observability
           
-          Check application details:
-          kubectl get applications -n devops k8s-monitoring -o yaml
-          
-          Check ArgoCD server logs if issues:
-          kubectl logs -n devops deployment/argocd-server
+          Check release details:
+          helm status k8s-monitoring -n observability
           
           Check deployed resources:
           kubectl get all -n observability
           
-          Access ArgoCD UI:
-          kubectl port-forward svc/argocd-server -n devops 8080:443
-          Then access: https://localhost:8080
+          Check Alloy logs collector pods:
+          kubectl get pods -n observability -l app.kubernetes.io/name=alloy
           
-          Get ArgoCD admin password:
-          kubectl -n devops get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+          Check Alloy logs:
+          kubectl logs -n observability -l app.kubernetes.io/name=alloy -c alloy
           
-          The monitoring stack will be automatically deployed and managed by ArgoCD! 
+          The monitoring stack has been deployed directly via Helm! 

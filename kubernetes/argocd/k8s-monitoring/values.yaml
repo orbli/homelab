@@ -6,12 +6,11 @@ destinations:
   - name: loki
     type: loki
     url: http://loki-grafana-loki-gateway.observability.svc.home-hk1-cluster.orbb.li/loki/api/v1/push
-  - name: prometheus
-    type: prometheus
-    url: http://kube-prometheus-stack-prometheus.observability.svc.home-hk1-cluster.orbb.li:9090
+
 
 clusterEvents:
   enabled: true
+  collector: alloy-logs
   namespaces:
     - devops
     - iam
@@ -38,7 +37,7 @@ podLogs:
 
 # Collectors
 alloy-singleton:
-  enabled: true
+  enabled: false
 
 alloy-metrics:
   enabled: false
@@ -56,4 +55,4 @@ alloy-profiles:
   enabled: false
 
 alloy-receiver:
-  enabled: false
+  enabled: false 

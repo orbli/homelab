@@ -1,0 +1,164 @@
+# ArgoCD Headless Configuration
+# This configuration runs ArgoCD without the UI server
+# The UI can be hosted separately or accessed via port-forward
+
+global:
+  domain: argocd.home-hk1-cluster.orbb.li
+
+configs:
+  cm:
+    # Disable internal TLS for headless setup
+    server.grpc.insecure: true
+    
+    # OIDC Configuration for Keycloak
+    oidc.config: |
+      name: Keycloak
+      issuer: https://keycloak-lab.orbb.li/realms/orbb.li
+      clientID: argocd
+      clientSecret: $oidc.keycloak.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+    
+    # RBAC Configuration
+    policy.default: role:readonly
+    policy.csv: |
+      p, role:admin, applications, *, */*, allow
+      p, role:admin, clusters, *, *, allow
+      p, role:admin, repositories, *, *, allow
+      g, argocd-admins, role:admin
+  
+  params:
+    # Headless mode - disable UI
+    server.disable.auth: false
+    server.insecure: true
+    
+    # Application controller settings
+    controller.status.processors: 20
+    controller.operation.processors: 10
+    controller.self.heal.timeout.seconds: 5
+    
+    # Repo server settings
+    reposerver.parallelism.limit: 5
+
+# Server configuration (minimal for headless)
+server:
+  # Reduce replicas for headless mode
+  replicas: 1
+  
+  # Disable UI components
+  extraArgs:
+    - --disable-auth
+    - --insecure
+  
+  service:
+    type: ClusterIP
+    grpc:
+      enabled: true
+    metrics:
+      enabled: true
+  
+  # Resource limits for headless server
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Controller - this is the main component for GitOps
+controller:
+  replicas: 1
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  
+  metrics:
+    enabled: true
+
+# Repo Server - handles Git operations
+repoServer:
+  replicas: 1
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Redis - caching layer
+redis:
+  enabled: true
+  
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Dex - disable for headless if using direct OIDC
+dex:
+  enabled: false
+
+# ApplicationSet controller - for managing multiple apps
+applicationSet:
+  enabled: true
+  
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Notifications controller
+notifications:
+  enabled: true
+  
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Disable components not needed for headless
+## Disable the UI-specific ingress
+ingress:
+  enabled: false
+
+## Disable UI-specific RBAC
+rbac:
+  create: true
+  
+# Metrics and monitoring
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: observability
+
+# Node affinity for Raspberry Pi
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/arch
+          operator: In
+          values:
+          - arm64
