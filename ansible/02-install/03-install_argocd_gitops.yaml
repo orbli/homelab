@@ -37,8 +37,8 @@
         release_namespace: "{{ namespace }}"
         create_namespace: false
         state: present
-        timeout: 10m0s
-        wait: true
+        timeout: 30m0s
+        wait: false
         values_files:
           - "{{ playbook_dir }}/../../kubernetes/namespaces/gitops/values-argocd-core.yaml"
     
@@ -109,12 +109,12 @@
           spec:
             project: default
             source:
-              repoURL: "{{ repo_url }}"
-              targetRevision: HEAD
-              path: kubernetes/namespaces/gitops
+              repoURL: https://argoproj.github.io/argo-helm
+              chart: argo-cd
+              targetRevision: "{{ argocd_version }}"
               helm:
-                valueFiles:
-                  - values-argocd-core.yaml
+                valuesObject:
+                  "{{ lookup('file', playbook_dir + '/../../kubernetes/namespaces/gitops/values-argocd-core.yaml') | from_yaml }}"
             destination:
               server: https://kubernetes.default.svc
               namespace: "{{ namespace }}"
@@ -127,6 +127,7 @@
                 - CreateNamespace=false
                 - PrunePropagationPolicy=foreground
                 - PruneLast=true
+                - ServerSideApply=true
               retry:
                 limit: 5
                 backoff:
