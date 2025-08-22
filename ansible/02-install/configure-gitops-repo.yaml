@@ -1,0 +1,49 @@
+---
+- name: Configure GitOps Repository URL
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars_prompt:
+    - name: github_username
+      prompt: "Enter your GitHub username"
+      private: false
+    - name: github_repo
+      prompt: "Enter your repository name (default: homelab)"
+      default: homelab
+      private: false
+      
+  vars:
+    repo_url: "https://github.com/{{ github_username }}/{{ github_repo }}.git"
+    
+  tasks:
+    - name: Update repository URL in ArgoCD values
+      ansible.builtin.replace:
+        path: "{{ playbook_dir }}/../../kubernetes/namespaces/gitops/values-argocd-core.yaml"
+        regexp: 'https://github.com/yourusername/homelab.git'
+        replace: "{{ repo_url }}"
+        
+    - name: Update repository URL in GitOps application manifests
+      ansible.builtin.replace:
+        path: "{{ item }}"
+        regexp: 'https://github.com/yourusername/homelab.git'
+        replace: "{{ repo_url }}"
+      loop:
+        - "{{ playbook_dir }}/../../kubernetes/gitops/apps/monitoring-app.yaml"
+        - "{{ playbook_dir }}/../../kubernetes/gitops/apps/keycloak-app.yaml"
+        - "{{ playbook_dir }}/../../kubernetes/gitops/apps/networking-app.yaml"
+        
+    - name: Display configuration summary
+      debug:
+        msg: |
+          Repository URL configured: {{ repo_url }}
+          
+          Files updated:
+          - kubernetes/namespaces/gitops/values-argocd-core.yaml
+          - kubernetes/gitops/apps/*.yaml
+          
+          Next steps:
+          1. Commit these changes to your repository
+          2. Push to GitHub
+          3. Run the ArgoCD installation playbook:
+             ansible-playbook 03-install_argocd_gitops.yaml

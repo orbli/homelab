@@ -1,0 +1,211 @@
+---
+- name: Install Self-Hosting Headless ArgoCD in GitOps Namespace
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    argocd_version: "7.7.12"  # Latest stable version
+    namespace: gitops
+    repo_url: "https://github.com/orbli/homelab.git"
+    
+  tasks:
+    - name: Add ArgoProj Helm repository
+      kubernetes.core.helm_repository:
+        name: argo
+        repo_url: https://argoproj.github.io/argo-helm
+        state: present
+    
+    - name: Update Helm repositories
+      kubernetes.core.helm_repository:
+        name: argo
+        repo_url: https://argoproj.github.io/argo-helm
+        force_update: true
+    
+    - name: Create gitops namespace
+      kubernetes.core.k8s:
+        name: "{{ namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+    
+    - name: Install ArgoCD Core using Helm chart
+      kubernetes.core.helm:
+        name: argocd
+        chart_ref: argo/argo-cd
+        chart_version: "{{ argocd_version }}"
+        release_namespace: "{{ namespace }}"
+        create_namespace: false
+        state: present
+        timeout: 10m0s
+        wait: true
+        values_files:
+          - "{{ playbook_dir }}/../../kubernetes/namespaces/gitops/values-argocd-core.yaml"
+    
+    - name: Wait for ArgoCD application controller to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=argocd-application-controller
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 300
+      register: controller_pod
+    
+    - name: Wait for ArgoCD repo server to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=argocd-repo-server
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 300
+      register: repo_pod
+    
+    - name: Wait for ArgoCD server to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=argocd-server
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 300
+      register: server_pod
+    
+    - name: Get initial admin password
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: argocd-initial-admin-secret
+        namespace: "{{ namespace }}"
+      register: admin_secret
+      until: admin_secret.resources | length > 0
+      retries: 10
+      delay: 5
+    
+    - name: Create ArgoCD self-management Application
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: argocd-self
+            namespace: "{{ namespace }}"
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: "{{ repo_url }}"
+              targetRevision: HEAD
+              path: kubernetes/namespaces/gitops
+              helm:
+                valueFiles:
+                  - values-argocd-core.yaml
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=false
+                - PrunePropagationPolicy=foreground
+                - PruneLast=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+    
+    - name: Create root Application for app-of-apps pattern
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: root-app
+            namespace: "{{ namespace }}"
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: "{{ repo_url }}"
+              targetRevision: HEAD
+              path: kubernetes/gitops/apps
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: "{{ namespace }}"
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+    
+    - name: Display installation summary
+      debug:
+        msg: |
+          ========================================
+          ArgoCD Core (Headless) Installation Complete!
+          ========================================
+          
+          Namespace: {{ namespace }}
+          Mode: Core/Headless (No UI)
+          
+          Initial admin password: {{ (admin_secret.resources[0].data.password | b64decode) if admin_secret.resources else 'Secret not found' }}
+          
+          Self-Management Status:
+          - ArgoCD is now managing itself via the 'argocd-self' application
+          - Root application created for app-of-apps pattern
+          
+          Access Methods:
+          1. Using kubectl directly:
+             kubectl -n {{ namespace }} get applications
+             kubectl -n {{ namespace }} get app argocd-self -o yaml
+          
+          2. Using ArgoCD CLI (with kubeconfig):
+             argocd login --core
+             argocd app list
+             argocd app sync argocd-self
+          
+          3. Port-forward for API access (if needed):
+             kubectl port-forward -n {{ namespace }} svc/argocd-server 8080:443
+          
+          Next Steps:
+          1. Update the repo URL in the applications to your actual repository
+          2. Create application manifests in kubernetes/gitops/apps/
+          3. Commit and push to trigger GitOps sync
+          
+          Security Notes:
+          - No UI is exposed (headless mode)
+          - Using Kubernetes RBAC only
+          - Access via kubectl or CLI with kubeconfig
+          
+          ========================================
+      when: admin_secret.resources | length > 0
