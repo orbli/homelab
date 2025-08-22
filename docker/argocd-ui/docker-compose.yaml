@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  argocd-ui:
+    image: quay.io/argoproj/argocd:v2.13.2
+    container_name: argocd-ui
+    command:
+      - argocd-server
+      - --insecure
+      - --staticassets
+      - /shared/app
+      - --grpc-web
+      - --repo-server
+      - host.docker.internal:8081  # Will be port-forwarded
+      - --dex-server
+      - http://localhost:5556  # Dex disabled in our setup
+      - --disable-auth  # Since we're using kubectl port-forward
+    network_mode: host
+    environment:
+      # Use the same Redis that's port-forwarded
+      - ARGOCD_REDIS_SERVER=localhost:6379
+      - ARGOCD_SERVER_INSECURE=true
+      - ARGOCD_SERVER_DISABLE_AUTH=false
+      - ARGOCD_SERVER_ROOTPATH=/
+      - ARGOCD_APPLICATION_CONTROLLER_SERVER=localhost:8082
+    volumes:
+      # Mount kubeconfig for potential future use
+      - ~/.kube:/home/argocd/.kube:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Run a kubectl proxy container to expose cluster services
+  kubectl-proxy:
+    image: bitnami/kubectl:latest
+    container_name: kubectl-proxy
+    network_mode: host
+    volumes:
+      - ~/.kube:/root/.kube:ro
+    command:
+      - proxy
+      - --address=0.0.0.0
+      - --port=8001
+      - --accept-hosts='^.*$'
+    restart: unless-stopped
