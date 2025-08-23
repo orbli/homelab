@@ -1,0 +1,83 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: orbb-li-realm
+  namespace: iam
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: orbb.li
+    enabled: true
+    displayName: "Orbb.li Realm"
+    sslRequired: external
+    registrationAllowed: false
+    loginWithEmailAllowed: true
+    duplicateEmailsAllowed: false
+    resetPasswordAllowed: true
+    editUsernameAllowed: false
+    bruteForceProtected: true
+    permanentLockout: false
+    maxFailureWaitSeconds: 900
+    minimumQuickLoginWaitSeconds: 60
+    waitIncrementSeconds: 60
+    quickLoginCheckMilliSeconds: 1000
+    maxDeltaTimeSeconds: 43200
+    failureFactor: 30
+    
+    # Default roles for the realm
+    roles:
+      realm:
+      - name: admin
+        description: Administrator role
+      - name: user
+        description: Regular user role
+    
+    # Google OAuth Identity Provider
+    # Note: These placeholders will be replaced by Ansible with actual secrets
+    identityProviders:
+    - alias: google
+      providerId: google
+      enabled: true
+      trustEmail: true
+      storeToken: false
+      addReadTokenRoleOnCreate: false
+      authenticateByDefault: false
+      linkOnly: false
+      firstBrokerLoginFlowAlias: first broker login
+      config:
+        clientId: "GOOGLE_CLIENT_ID_PLACEHOLDER"
+        clientSecret: "GOOGLE_CLIENT_SECRET_PLACEHOLDER"
+        defaultScope: "openid email profile"
+        hostedDomain: "orbb.li"
+        useJwksUrl: "true"
+        hideOnLoginPage: "false"
+        syncMode: "FORCE"
+    
+    # Browser flow settings
+    browserFlow: browser
+    registrationFlow: registration
+    directGrantFlow: direct grant
+    resetCredentialsFlow: reset credentials
+    clientAuthenticationFlow: clients
+    dockerAuthenticationFlow: docker auth
+    
+    # Realm attributes
+    attributes:
+      frontendUrl: "https://keycloak-lab.orbb.li"
+      _browser_header.contentSecurityPolicy: "frame-src 'self'; frame-ancestors 'self'; object-src 'none';"
+    
+    # Events configuration
+    eventsEnabled: true
+    eventsListeners:
+    - jboss-logging
+    enabledEventTypes:
+    - LOGIN
+    - LOGIN_ERROR
+    - LOGOUT
+    - LOGOUT_ERROR
+    - REGISTER
+    - REGISTER_ERROR
+    - CODE_TO_TOKEN
+    - CODE_TO_TOKEN_ERROR
+    adminEventsEnabled: true
+    adminEventsDetailsEnabled: true

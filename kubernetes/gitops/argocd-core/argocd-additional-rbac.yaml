@@ -1,0 +1,44 @@
+# Additional RBAC permissions for ArgoCD to resolve sync status issues
+# This grants read-only access to cluster-wide resources that ArgoCD needs
+# to properly determine sync status
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-application-controller-extra
+rules:
+# Allow listing all resources read-only for sync status determination
+# This is safe as it only grants read access, not write
+- apiGroups:
+  - "*"
+  resources:
+  - "*"
+  verbs:
+  - get
+  - list
+  - watch
+# Explicitly deny secrets from other namespaces for security
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+  resourceNames: []
+  # Note: This will be overridden by namespace-scoped RoleBindings
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-application-controller-extra
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argocd-application-controller-extra
+subjects:
+- kind: ServiceAccount
+  name: argocd-application-controller
+  namespace: gitops

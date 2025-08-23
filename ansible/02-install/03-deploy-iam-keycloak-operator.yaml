@@ -1,0 +1,177 @@
+---
+# Keycloak Deployment - Staged to ensure secrets are ready before pods start
+# This avoids race conditions where pods start with placeholder passwords
+
+- name: Deploy Keycloak with Proper Secret Management
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    namespace: iam
+    gitops_namespace: gitops
+    secrets_file: "../secrets/keycloak-secrets.yaml"
+    operator_stage1_path: "/home/eli/workbench/homelab/kubernetes/apps/iam/operator/stage1-secrets"
+    operator_stage2_path: "/home/eli/workbench/homelab/kubernetes/apps/iam/operator/stage2-apps"
+    instance_path: "/home/eli/workbench/homelab/kubernetes/apps/iam/instance"
+    
+  tasks:
+    - name: Check if secrets file exists
+      stat:
+        path: "{{ secrets_file }}"
+      register: secrets_file_stat
+      failed_when: not secrets_file_stat.stat.exists
+
+    - name: Load secrets
+      include_vars: "{{ secrets_file }}"
+      no_log: true
+
+    # STAGE 1: Create namespace and secrets (with placeholders)
+    - name: "Stage 1: Apply namespace and secret templates"
+      shell: |
+        kubectl apply -k {{ operator_stage1_path }}
+      register: stage1_result
+      changed_when: true
+
+    - name: Wait for namespace to exist
+      shell: |
+        kubectl get namespace {{ namespace }}
+      register: ns_check
+      until: ns_check.rc == 0
+      retries: 10
+      delay: 2
+
+    - name: Wait for secrets to be created
+      shell: |
+        kubectl get secret postgres-credentials -n {{ namespace }} && \
+        kubectl get secret keycloak-db-secret -n {{ namespace }}
+      register: secrets_check
+      until: secrets_check.rc == 0
+      retries: 10
+      delay: 2
+
+    # STAGE 2: Patch secrets with real values
+    - name: "Stage 2: Patch PostgreSQL credentials with actual password"
+      shell: |
+        echo -n "{{ postgres_password }}" | base64 | xargs -I {} kubectl patch secret postgres-credentials -n {{ namespace }} --type json -p='[
+          {"op": "replace", "path": "/data/POSTGRES_PASSWORD", "value": "{}"}
+        ]'
+      register: patch_postgres
+      changed_when: true
+
+    - name: Patch Keycloak database secret with actual password
+      shell: |
+        echo -n "{{ postgres_password }}" | base64 | xargs -I {} kubectl patch secret keycloak-db-secret -n {{ namespace }} --type json -p='[
+          {"op": "replace", "path": "/data/password", "value": "{}"}
+        ]'
+      register: patch_keycloak_db
+      changed_when: true
+
+    # STAGE 3: Deploy applications (they will now use the correct passwords)
+    - name: "Stage 3: Deploy operator and PostgreSQL"
+      shell: |
+        kubectl apply -k {{ operator_stage2_path }}
+      register: stage2_result
+      changed_when: true
+
+    - name: Wait for operator to be ready
+      shell: |
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=keycloak-operator -n {{ namespace }} --timeout=120s
+      register: operator_ready
+      retries: 3
+      delay: 10
+      until: operator_ready.rc == 0
+      ignore_errors: yes
+
+    - name: Wait for PostgreSQL to be ready
+      shell: |
+        kubectl wait --for=condition=ready pod -l app=postgres-db -n {{ namespace }} --timeout=120s
+      register: postgres_ready
+      retries: 3
+      delay: 10
+      until: postgres_ready.rc == 0
+      ignore_errors: yes
+
+    # STAGE 4: Deploy realm configurations
+    - name: "Stage 4: Deploy realm configurations"
+      shell: |
+        kubectl apply -k {{ instance_path }}
+      register: instance_result
+      changed_when: true
+
+    - name: Wait for realm import to exist
+      shell: |
+        kubectl get keycloakrealmimport orbb-li-realm -n {{ namespace }}
+      register: realm_check
+      until: realm_check.rc == 0
+      retries: 10
+      delay: 5
+      ignore_errors: yes
+
+    - name: Patch realm import with actual Google OAuth credentials
+      shell: |
+        kubectl patch keycloakrealmimport orbb-li-realm -n {{ namespace }} --type json -p='[
+          {"op": "replace", "path": "/spec/realm/identityProviders/0/config/clientId", "value": "{{ google_client_id }}"},
+          {"op": "replace", "path": "/spec/realm/identityProviders/0/config/clientSecret", "value": "{{ google_client_secret }}"}
+        ]'
+      register: patch_realm
+      when: realm_check.rc == 0
+      changed_when: true
+
+    # STAGE 5: Wait for Keycloak to be ready
+    - name: "Stage 5: Wait for Keycloak to be ready"
+      shell: |
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=keycloak -n {{ namespace }} --timeout=300s
+      register: keycloak_ready
+      retries: 3
+      delay: 30
+      until: keycloak_ready.rc == 0
+      ignore_errors: yes
+
+    - name: Get Keycloak initial admin credentials
+      shell: |
+        echo "Username: $(kubectl get secret keycloak-initial-admin -n {{ namespace }} -o jsonpath='{.data.username}' | base64 -d)"
+        echo "Password: $(kubectl get secret keycloak-initial-admin -n {{ namespace }} -o jsonpath='{.data.password}' | base64 -d)"
+      register: admin_creds
+      ignore_errors: yes
+
+    - name: Check deployment status
+      shell: |
+        echo "=== Pod Status ==="
+        kubectl get pods -n {{ namespace }}
+        echo ""
+        echo "=== Keycloak Status ==="
+        kubectl get keycloak -n {{ namespace }}
+        echo ""
+        echo "=== Realm Imports ==="
+        kubectl get keycloakrealmimport -n {{ namespace }}
+      register: status_check
+      changed_when: false
+
+    - name: Display deployment summary
+      debug:
+        msg: |
+          =====================================
+          Keycloak Deployment Complete
+          =====================================
+          
+          Deployment was done in stages to avoid race conditions:
+          1. Created namespace and secret templates
+          2. Patched secrets with real passwords
+          3. Deployed operator and PostgreSQL (with correct passwords)
+          4. Deployed realm configurations
+          5. Waited for everything to be ready
+          
+          Current Status:
+          {{ status_check.stdout }}
+          
+          Admin Credentials:
+          {{ admin_creds.stdout if admin_creds.rc == 0 else 'Run: kubectl get secret keycloak-initial-admin -n iam' }}
+          
+          Access Keycloak at: https://keycloak-lab.orbb.li
+          (Configure cloudflared tunnel to keycloak-service.{{ namespace }}.svc.cluster.local:8080)
+          
+          To troubleshoot:
+          kubectl logs -l app.kubernetes.io/name=keycloak -n {{ namespace }}
+          kubectl logs -l app=postgres-db -n {{ namespace }}
+          =====================================

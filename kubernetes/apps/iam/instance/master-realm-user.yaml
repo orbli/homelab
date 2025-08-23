@@ -1,0 +1,42 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: master-admin-user
+  namespace: iam
+spec:
+  keycloakCRName: keycloak
+  realm:
+    id: master
+    realm: master
+    # Note: This won't actually modify the master realm, but we keep it for documentation
+    # The master realm cannot be imported/modified via realm import
+    # Users need to be created manually after initial setup
+    users:
+    - username: mail@orbb.li
+      email: mail@orbb.li
+      emailVerified: true
+      enabled: true
+      firstName: Admin
+      lastName: User
+      # Give full admin rights in master realm
+      realmRoles:
+      - admin
+      - create-realm
+      - manage-realm
+      - manage-users
+      clientRoles:
+        realm-management:
+        - realm-admin
+        - manage-users
+        - manage-clients
+        - manage-realm
+        - manage-identity-providers
+        master-realm:
+        - manage-clients
+        - manage-users
+        - manage-realm
+        - manage-identity-providers
+      credentials:
+      - type: password
+        temporary: true
+        value: "INITIAL_USER_PASSWORD_PLACEHOLDER"
