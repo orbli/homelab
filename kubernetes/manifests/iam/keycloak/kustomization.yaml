@@ -11,8 +11,8 @@ resources:
   
   # Keycloak instance and configuration
   - keycloak-instance.yaml
-  - keycloak-ingress.yaml
   - keycloak-db-secret.yaml
+  # Note: keycloak-ingress.yaml removed - the operator creates its own service
 
 patches:
   # Patch the operator deployment with more resources for Raspberry Pi
