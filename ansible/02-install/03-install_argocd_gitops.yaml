@@ -137,39 +137,41 @@
                   factor: 2
                   maxDuration: 3m
     
-    - name: Create root Application for app-of-apps pattern
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: argoproj.io/v1alpha1
-          kind: Application
-          metadata:
-            name: root-app
-            namespace: "{{ namespace }}"
-            finalizers:
-              - resources-finalizer.argocd.argoproj.io
-          spec:
-            project: default
-            source:
-              repoURL: "{{ repo_url }}"
-              targetRevision: HEAD
-              path: kubernetes/gitops/apps
-            destination:
-              server: https://kubernetes.default.svc
-              namespace: "{{ namespace }}"
-            syncPolicy:
-              automated:
-                prune: true
-                selfHeal: true
-                allowEmpty: false
-              syncOptions:
-                - CreateNamespace=true
-              retry:
-                limit: 5
-                backoff:
-                  duration: 5s
-                  factor: 2
-                  maxDuration: 3m
+    # Root app-of-apps pattern disabled for clean start
+    # Uncomment this task when ready to deploy applications
+    # - name: Create root Application for app-of-apps pattern
+    #   kubernetes.core.k8s:
+    #     state: present
+    #     definition:
+    #       apiVersion: argoproj.io/v1alpha1
+    #       kind: Application
+    #       metadata:
+    #         name: root-app
+    #         namespace: "{{ namespace }}"
+    #         finalizers:
+    #           - resources-finalizer.argocd.argoproj.io
+    #       spec:
+    #         project: default
+    #         source:
+    #           repoURL: "{{ repo_url }}"
+    #           targetRevision: HEAD
+    #           path: kubernetes/gitops/apps
+    #         destination:
+    #           server: https://kubernetes.default.svc
+    #           namespace: "{{ namespace }}"
+    #         syncPolicy:
+    #           automated:
+    #             prune: true
+    #             selfHeal: true
+    #             allowEmpty: false
+    #           syncOptions:
+    #             - CreateNamespace=true
+    #           retry:
+    #             limit: 5
+    #             backoff:
+    #               duration: 5s
+    #               factor: 2
+    #               maxDuration: 3m
     
     - name: Display installation summary
       debug:
@@ -185,7 +187,8 @@
           
           Self-Management Status:
           - ArgoCD is now managing itself via the 'argocd' application
-          - Root application created for app-of-apps pattern
+          - Clean installation with ONLY self-hosting enabled
+          - Ready to add applications as needed
           
           Access Methods:
           1. Using kubectl directly:
