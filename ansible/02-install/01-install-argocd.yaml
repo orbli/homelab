@@ -1,6 +1,6 @@
 ---
 # Install ArgoCD Core (headless - no UI/server)
-# Using official core-install.yaml manifest
+# Using Kustomization from Git repository for single source of truth
 
 - name: Install ArgoCD Core (Headless)
   hosts: localhost
@@ -9,8 +9,9 @@
   
   vars:
     namespace: gitops
-    argocd_version: v3.1.0
-    argocd_core_manifest: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/core-install.yaml"
+    git_repo: https://github.com/orbli/homelab.git
+    git_branch: master
+    kustomize_path: kubernetes/gitops/argocd-core
     
   tasks:
     - name: Create gitops namespace
@@ -20,12 +21,11 @@
         kind: Namespace
         state: present
 
-    - name: Apply ArgoCD Core manifest
-      kubernetes.core.k8s:
-        state: present
-        namespace: "{{ namespace }}"
-        src: "{{ argocd_core_manifest }}"
+    - name: Apply ArgoCD Core using Kustomize from Git
+      shell: |
+        kubectl apply -k "{{ git_repo }}/{{ kustomize_path }}?ref={{ git_branch }}"
       register: manifest_result
+      changed_when: "'configured' in manifest_result.stdout or 'created' in manifest_result.stdout"
 
     - name: Wait for ArgoCD controller to be ready
       kubernetes.core.k8s_info:
@@ -63,6 +63,15 @@
       shell: kubectl get svc -n {{ namespace }} --no-headers | awk '{print $1}'
       register: services
 
+    - name: Get ArgoCD version from ConfigMap
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        name: argocd-version
+        namespace: "{{ namespace }}"
+      register: version_cm
+      ignore_errors: yes
+
     - name: Display installation results
       debug:
         msg: |
@@ -71,7 +80,9 @@
           =====================================
           
           Namespace: {{ namespace }}
-          Version: {{ argocd_version }}
+          Configuration Source: {{ git_repo }}/{{ kustomize_path }}
+          Branch: {{ git_branch }}
+          Version: {{ version_cm.resources[0].data.version | default('Check kustomization.yaml') if version_cm.resources else 'Check kustomization.yaml' }}
           
           Running Pods:
           {{ running_pods.stdout }}
@@ -87,4 +98,8 @@
           
           To use ArgoCD CLI in core mode:
           ARGOCD_OPTS="--core" argocd app list
+          
+          Note: This installation uses Kustomize from Git.
+          To update ArgoCD version, edit:
+          {{ git_repo }}/{{ kustomize_path }}/kustomization.yaml
           =====================================

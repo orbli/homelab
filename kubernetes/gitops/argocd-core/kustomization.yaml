@@ -19,24 +19,41 @@ resources:
 - https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/core-install.yaml  # UPDATE 2: Change version here too
 
 # Optional: Resource adjustments for Raspberry Pi
+# Using strategic merge patches for better compatibility
 patches:
 - patch: |-
-    - op: replace
-      path: /spec/template/spec/containers/0/resources/limits/memory
-      value: 512Mi
-    - op: replace
-      path: /spec/template/spec/containers/0/resources/requests/memory
-      value: 256Mi
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: argocd-repo-server
+    spec:
+      template:
+        spec:
+          containers:
+          - name: argocd-repo-server
+            resources:
+              limits:
+                memory: 1Gi
+              requests:
+                memory: 512Mi
   target:
     kind: Deployment
     name: argocd-repo-server
 - patch: |-
-    - op: replace
-      path: /spec/template/spec/containers/0/resources/limits/memory
-      value: 256Mi
-    - op: replace
-      path: /spec/template/spec/containers/0/resources/requests/memory
-      value: 128Mi
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      name: argocd-application-controller
+    spec:
+      template:
+        spec:
+          containers:
+          - name: argocd-application-controller
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                memory: 256Mi
   target:
     kind: StatefulSet
     name: argocd-application-controller
