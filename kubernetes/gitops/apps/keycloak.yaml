@@ -10,8 +10,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/elijahdashdan/eli-homelab-k8s.git
-    targetRevision: HEAD
+    repoURL: https://github.com/orbli/homelab.git
+    targetRevision: master
     path: kubernetes/manifests/iam/keycloak
   destination:
     namespace: iam
