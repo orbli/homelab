@@ -47,7 +47,7 @@
                 originRequest:
                   noTLSVerify: true
               - hostname: keycloak-lab.orbb.li
-                service: http://keycloak.iam.svc.home-hk1-cluster.orbb.li
+                service: http://keycloak-service.iam.svc.home-hk1-cluster.orbb.li
                 originRequest:
                   noTLSVerify: true
               - hostname: grafana-lab.orbb.li

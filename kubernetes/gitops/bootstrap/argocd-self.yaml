@@ -12,6 +12,7 @@ spec:
     chart: argo-cd
     targetRevision: 7.7.12
     helm:
+      releaseName: argocd
       valueFiles:
         - https://raw.githubusercontent.com/orbli/homelab/master/kubernetes/namespaces/gitops/values-argocd-core.yaml
   destination:
