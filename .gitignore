@@ -1,1 +1,6 @@
 **/inventory.yaml
+
+# Ansible secrets
+ansible/secrets/*.yaml
+ansible/secrets/*.yml
+!ansible/secrets/*.example
