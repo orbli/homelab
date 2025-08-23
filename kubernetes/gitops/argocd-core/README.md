@@ -12,19 +12,17 @@ This directory contains the configuration for self-hosted ArgoCD Core (headless 
 To upgrade ArgoCD Core version:
 
 1. Edit `kustomization.yaml`
-2. Update the version in two places:
-   - `configMapGenerator` → `literals` → `version=vX.Y.Z`
-   - `resources` → Update the URL to the new version
+2. **IMPORTANT**: Update the version in TWO places (Kustomize limitation - no variable substitution in resource URLs):
+   - Line 15: `version=vX.Y.Z` in configMapGenerator
+   - Line 19: Update the version in the resource URL
 
 Example:
 ```yaml
-configMapGenerator:
-- name: argocd-version
-  literals:
-  - version=v3.2.0  # Update version here
+# Line 15:
+  - version=v3.2.0  # UPDATE 1: Change version here
 
-resources:
-- https://raw.githubusercontent.com/argoproj/argo-cd/v3.2.0/manifests/core-install.yaml  # And here
+# Line 19:
+- https://raw.githubusercontent.com/argoproj/argo-cd/v3.2.0/manifests/core-install.yaml  # UPDATE 2: Change version here too
 ```
 
 3. Commit and push to Git

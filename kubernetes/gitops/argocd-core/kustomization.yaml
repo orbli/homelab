@@ -1,17 +1,22 @@
+# IMPORTANT: To update ArgoCD version, you must change it in TWO places:
+# 1. The version literal in configMapGenerator (for reference/documentation)
+# 2. The version in the resources URL below
+# This is a Kustomize limitation - variables cannot be used in resource URLs
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 namespace: gitops
 
-# ArgoCD Core version configuration
+# ArgoCD Core version configuration (for reference only)
 configMapGenerator:
 - name: argocd-version
   literals:
-  - version=v3.1.0
+  - version=v3.1.0  # UPDATE 1: Change version here
 
 # Reference to the official ArgoCD Core manifest
 resources:
-- https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/core-install.yaml
+- https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/core-install.yaml  # UPDATE 2: Change version here too
 
 # Optional: Resource adjustments for Raspberry Pi
 patches:
