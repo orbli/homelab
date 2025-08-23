@@ -112,11 +112,12 @@
 
     - name: Trigger manual sync if needed
       shell: |
-        ARGOCD_OPTS="--core" argocd app sync argocd-self-host --timeout 60
+        ARGOCD_OPTS="--core" argocd app sync argocd-self-host --timeout 30 || true
       when: 
         - app_info.resources[0].status.sync.status is defined
         - app_info.resources[0].status.sync.status != "Synced"
-      ignore_errors: yes
+      register: sync_result
+      changed_when: "'Sync operation initiated' in (sync_result.stdout | default(''))"
 
     - name: Get final Application status
       kubernetes.core.k8s_info:
