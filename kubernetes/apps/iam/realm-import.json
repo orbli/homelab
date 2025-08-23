@@ -89,7 +89,7 @@
   "clientAuthenticationFlow": "clients",
   "dockerAuthenticationFlow": "docker auth",
   "attributes": {
-    "frontendUrl": "https://keycloak.orbb.li",
+    "frontendUrl": "https://keycloak-lab.orbb.li",
     "_browser_header.contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';"
   },
   "eventsEnabled": true,

@@ -8,11 +8,11 @@
   gather_facts: no
   
   vars:
-    namespace: keycloak
+    namespace: iam
     gitops_namespace: gitops
     git_repo: https://github.com/orbli/homelab.git
     git_branch: master
-    keycloak_path: kubernetes/apps/keycloak
+    keycloak_path: kubernetes/apps/iam
     secrets_file: "../secrets/keycloak-secrets.yaml"
     
   tasks:
@@ -37,7 +37,7 @@
       register: argocd_check
       failed_when: argocd_check.resources | length == 0
 
-    - name: Create Keycloak namespace
+    - name: Create IAM namespace
       kubernetes.core.k8s:
         name: "{{ namespace }}"
         api_version: v1
@@ -219,11 +219,11 @@
           Namespace: {{ namespace }}
           
           Access URLs:
-          - External: https://keycloak.orbb.li
+          - External: https://keycloak-lab.orbb.li
           - Internal: http://keycloak.{{ namespace }}.svc.cluster.local:8080
           
           Admin Console:
-          - URL: https://keycloak.orbb.li/admin
+          - URL: https://keycloak-lab.orbb.li/admin
           - Username: admin
           - Password: (from secrets file)
           
@@ -234,10 +234,10 @@
           
           Google OAuth:
           - Status: Configured
-          - Redirect URI: https://keycloak.orbb.li/realms/orbb.li/broker/google/endpoint
+          - Redirect URI: https://keycloak-lab.orbb.li/realms/orbb.li/broker/google/endpoint
           
           Next Steps:
-          1. Add DNS entry for keycloak.orbb.li → your ingress IP
+          1. Add DNS entry for keycloak-lab.orbb.li → your ingress IP
           2. Login to admin console
           3. Change mail@orbb.li user password
           4. Test Google OAuth login

@@ -1,6 +1,6 @@
-# Keycloak Deployment
+# IAM (Identity and Access Management) - Keycloak
 
-This directory contains the Kubernetes manifests for deploying Keycloak with PostgreSQL backend.
+This directory contains the Kubernetes manifests for deploying Keycloak with PostgreSQL backend in the IAM namespace.
 
 ## Features
 
@@ -23,11 +23,11 @@ This directory contains the Kubernetes manifests for deploying Keycloak with Pos
    - Create or select a project
    - Enable Google+ API
    - Create OAuth 2.0 credentials
-   - Add authorized redirect URI: `https://keycloak.orbb.li/realms/orbb.li/broker/google/endpoint`
+   - Add authorized redirect URI: `https://keycloak-lab.orbb.li/realms/orbb.li/broker/google/endpoint`
    - Copy Client ID and Client Secret to secrets file
 
 3. **DNS Configuration**:
-   - Add DNS A record: `keycloak.orbb.li` → your cluster ingress IP
+   - Add DNS A record: `keycloak-lab.orbb.li` → your cluster ingress IP
 
 4. **Ingress Controller**:
    - Ensure you have an ingress controller installed (e.g., nginx-ingress)
@@ -38,16 +38,16 @@ This directory contains the Kubernetes manifests for deploying Keycloak with Pos
 Deploy using Ansible and ArgoCD:
 
 ```bash
-ansible-playbook ansible/02-install/03-deploy-keycloak.yaml
+ansible-playbook ansible/02-install/03-deploy-iam-keycloak.yaml
 ```
 
 ## Access
 
-- **Admin Console**: https://keycloak.orbb.li/admin
+- **Admin Console**: https://keycloak-lab.orbb.li/admin
   - Username: `admin`
   - Password: (from your secrets file)
 
-- **User Realm**: https://keycloak.orbb.li/realms/orbb.li
+- **User Realm**: https://keycloak-lab.orbb.li/realms/orbb.li
   - Admin User: `mail@orbb.li`
   - Initial Password: (from your secrets file, temporary)
 
@@ -75,9 +75,9 @@ Adjust these in the deployment files if needed.
 
 Check pod status:
 ```bash
-kubectl get pods -n keycloak
-kubectl logs -n keycloak deployment/keycloak
-kubectl logs -n keycloak deployment/postgres
+kubectl get pods -n iam
+kubectl logs -n iam deployment/keycloak
+kubectl logs -n iam deployment/postgres
 ```
 
 Check ArgoCD sync status:
@@ -103,9 +103,9 @@ ARGOCD_OPTS="--core" argocd app sync keycloak
 To backup Keycloak data:
 ```bash
 # Backup database
-kubectl exec -n keycloak deployment/postgres -- pg_dump -U keycloak keycloak > keycloak-backup.sql
+kubectl exec -n iam deployment/postgres -- pg_dump -U keycloak keycloak > keycloak-backup.sql
 
 # Backup realm configuration
-kubectl exec -n keycloak deployment/keycloak -- \
+kubectl exec -n iam deployment/keycloak -- \
   /opt/keycloak/bin/kc.sh export --dir /tmp --realm orbb.li
 ```

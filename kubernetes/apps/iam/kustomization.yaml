@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: keycloak
+namespace: iam
 
 resources:
 - namespace.yaml
@@ -20,7 +20,7 @@ configMapGenerator:
   literals:
   - KC_DB=postgres
   - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
-  - KC_HOSTNAME=keycloak.orbb.li
+  - KC_HOSTNAME=keycloak-lab.orbb.li
   - KC_PROXY=edge
   - KC_HTTP_ENABLED=true
   - KC_HEALTH_ENABLED=true

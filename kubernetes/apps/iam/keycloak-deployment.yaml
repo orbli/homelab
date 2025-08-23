@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: keycloak
-  namespace: keycloak
+  namespace: iam
   labels:
     app: keycloak
 spec:
@@ -55,7 +55,7 @@ spec:
               key: POSTGRES_PASSWORD
         # Hostname and proxy settings
         - name: KC_HOSTNAME
-          value: keycloak.orbb.li
+          value: keycloak-lab.orbb.li
         - name: KC_PROXY
           value: edge
         - name: KC_HTTP_ENABLED
