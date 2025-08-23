@@ -1,15 +1,16 @@
 ---
 # Install ArgoCD Core (headless - no UI/server)
-# Only the GitOps engine components
+# Using official core-install.yaml manifest
 
-- name: Install ArgoCD Core Components Only
+- name: Install ArgoCD Core (Headless)
   hosts: localhost
   connection: local
   gather_facts: no
   
   vars:
     namespace: gitops
-    argocd_version: 7.7.12
+    argocd_version: v3.1.0
+    argocd_core_manifest: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/core-install.yaml"
     
   tasks:
     - name: Create gitops namespace
@@ -19,141 +20,40 @@
         kind: Namespace
         state: present
 
-    - name: Add ArgoCD Helm repository
-      kubernetes.core.helm_repository:
-        name: argo
-        repo_url: https://argoproj.github.io/argo-helm
+    - name: Apply ArgoCD Core manifest
+      kubernetes.core.k8s:
         state: present
+        namespace: "{{ namespace }}"
+        src: "{{ argocd_core_manifest }}"
+      register: manifest_result
 
-    - name: Install ArgoCD Core (no server/UI)
-      kubernetes.core.helm:
-        name: argocd
-        chart_ref: argo/argo-cd
-        release_namespace: "{{ namespace }}"
-        chart_version: "{{ argocd_version }}"
-        values:
-          # CORE MODE - Disable ALL UI/Server components
-          server:
-            enabled: false
-          
-          # Disable Dex (OIDC provider for UI)
-          dex:
-            enabled: false
-            
-          # Disable notifications controller
-          notifications:
-            enabled: false
-            
-          # Core Components Only
-          controller:
-            replicas: 1
-            resources:
-              limits:
-                cpu: 500m
-                memory: 512Mi
-              requests:
-                cpu: 250m
-                memory: 256Mi
-                
-          repoServer:
-            replicas: 1
-            resources:
-              limits:
-                cpu: 500m
-                memory: 1Gi
-              requests:
-                cpu: 200m
-                memory: 512Mi
-            env:
-              - name: GOGC
-                value: "50"
-                
-          redis:
-            enabled: true
-            resources:
-              limits:
-                cpu: 100m
-                memory: 128Mi
-              requests:
-                cpu: 50m
-                memory: 64Mi
-                
-          applicationSet:
-            enabled: true
-            replicas: 1
-            resources:
-              limits:
-                cpu: 100m
-                memory: 128Mi
-              requests:
-                cpu: 50m
-                memory: 64Mi
-                
-          configs:
-            cm:
-              timeout.reconciliation: "180s"
-              application.instanceLabelKey: argocd.argoproj.io/instance
-            params:
-              controller.status.processors: "10"
-              controller.operation.processors: "5"
-              controller.self.heal.timeout.seconds: "5"
-              reposerver.parallelism.limit: "2"
-              
-        state: present
-        wait: true
-        wait_timeout: 300s
-
-    # - name: Force delete server components
-    #   kubernetes.core.k8s:
-    #     state: absent
-    #     api_version: "{{ item.api }}"
-    #     kind: "{{ item.kind }}"
-    #     name: "{{ item.name }}"
-    #     namespace: "{{ namespace }}"
-    #   loop:
-    #     - { api: "apps/v1", kind: "Deployment", name: "argocd-server" }
-    #     - { api: "v1", kind: "Service", name: "argocd-server" }
-    #     - { api: "v1", kind: "Service", name: "argocd-server-metrics" }
-    #     - { api: "v1", kind: "ServiceAccount", name: "argocd-server" }
-    #     - { api: "rbac.authorization.k8s.io/v1", kind: "Role", name: "argocd-server" }
-    #     - { api: "rbac.authorization.k8s.io/v1", kind: "RoleBinding", name: "argocd-server" }
-    #     - { api: "rbac.authorization.k8s.io/v1", kind: "ClusterRole", name: "argocd-server" }
-    #     - { api: "rbac.authorization.k8s.io/v1", kind: "ClusterRoleBinding", name: "argocd-server" }
-    #   ignore_errors: yes
-
-    # - name: Wait for server pod to terminate
-    #   kubernetes.core.k8s_info:
-    #     api_version: v1
-    #     kind: Pod
-    #     namespace: "{{ namespace }}"
-    #     label_selectors:
-    #       - app.kubernetes.io/name=argocd-server
-    #   register: server_pods
-    #   until: server_pods.resources | length == 0
-    #   retries: 10
-    #   delay: 5
-    #   ignore_errors: yes
-
-    - name: Wait for pods to be ready
+    - name: Wait for ArgoCD controller to be ready
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
         namespace: "{{ namespace }}"
         label_selectors:
-          - app.kubernetes.io/instance=argocd
-      register: pod_list
-      until: pod_list.resources | selectattr('status.phase', 'equalto', 'Running') | list | length >= 4
+          - app.kubernetes.io/name=argocd-application-controller
+      register: controller_pods
+      until: 
+        - controller_pods.resources | length > 0
+        - controller_pods.resources[0].status.phase == "Running"
       retries: 30
       delay: 10
 
-    # - name: Verify NO server components exist
-    #   kubernetes.core.k8s_info:
-    #     api_version: v1
-    #     kind: Service
-    #     name: argocd-server
-    #     namespace: "{{ namespace }}"
-    #   register: server_check
-    #   failed_when: server_check.resources | length > 0
+    - name: Wait for ArgoCD repo-server to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=argocd-repo-server
+      register: repo_pods
+      until:
+        - repo_pods.resources | length > 0
+        - repo_pods.resources[0].status.phase == "Running"
+      retries: 30
+      delay: 10
 
     - name: Get running pods
       shell: kubectl get pods -n {{ namespace }} --no-headers | grep -v Completed | awk '{print $1}'
@@ -173,8 +73,6 @@
           Namespace: {{ namespace }}
           Version: {{ argocd_version }}
           
-          ✅ CORE MODE - NO UI/SERVER
-          
           Running Pods:
           {{ running_pods.stdout }}
           
@@ -186,4 +84,7 @@
           
           To check applications:
           kubectl get applications -n {{ namespace }}
+          
+          To use ArgoCD CLI in core mode:
+          ARGOCD_OPTS="--core" argocd app list
           =====================================
