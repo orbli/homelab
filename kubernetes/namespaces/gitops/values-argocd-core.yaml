@@ -112,13 +112,20 @@ controller:
 repoServer:
   replicas: 1
   
+  # Increased memory to prevent OOMKilled issues
+  # Repo-server needs more memory for Git operations and Helm chart processing
   resources:
     limits:
-      cpu: 200m
-      memory: 256Mi
+      cpu: 500m
+      memory: 1Gi
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 200m
+      memory: 512Mi
+  
+  # Add environment variables for better memory management
+  env:
+    - name: GOGC
+      value: "50"  # More aggressive garbage collection to reduce memory usage
       
   metrics:
     enabled: true
