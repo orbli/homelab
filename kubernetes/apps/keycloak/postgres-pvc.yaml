@@ -9,4 +9,4 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  storageClassName: local-path  # Adjust based on your cluster storage
+  storageClassName: k8s-csi  # Using cluster's default NFS storage

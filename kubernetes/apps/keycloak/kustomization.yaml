@@ -12,17 +12,8 @@ resources:
 - keycloak-service.yaml
 - keycloak-ingress.yaml
 
-# Secrets will be created by Ansible from ansible/secrets
-secretGenerator:
-- name: keycloak-db-secret
-  literals:
-  - POSTGRES_DB=keycloak
-  - POSTGRES_USER=keycloak
-  # POSTGRES_PASSWORD will be added via Ansible
-- name: keycloak-admin-secret
-  literals:
-  - KEYCLOAK_ADMIN=admin
-  # KEYCLOAK_ADMIN_PASSWORD will be added via Ansible
+# Note: Secrets are created by Ansible, not Kustomize
+# Removing secretGenerator to avoid duplicate secrets
 
 configMapGenerator:
 - name: keycloak-config

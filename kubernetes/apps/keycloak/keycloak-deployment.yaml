@@ -20,7 +20,6 @@ spec:
         image: quay.io/keycloak/keycloak:23.0
         args:
         - start
-        - --optimized
         - --import-realm
         ports:
         - containerPort: 8080
@@ -41,15 +40,9 @@ spec:
               key: KEYCLOAK_ADMIN_PASSWORD
         # Database configuration
         - name: KC_DB
-          valueFrom:
-            configMapKeyRef:
-              name: keycloak-config
-              key: KC_DB
+          value: postgres
         - name: KC_DB_URL
-          valueFrom:
-            configMapKeyRef:
-              name: keycloak-config
-              key: KC_DB_URL
+          value: jdbc:postgresql://postgres:5432/keycloak
         - name: KC_DB_USERNAME
           valueFrom:
             secretKeyRef:
@@ -62,30 +55,15 @@ spec:
               key: POSTGRES_PASSWORD
         # Hostname and proxy settings
         - name: KC_HOSTNAME
-          valueFrom:
-            configMapKeyRef:
-              name: keycloak-config
-              key: KC_HOSTNAME
+          value: keycloak.orbb.li
         - name: KC_PROXY
-          valueFrom:
-            configMapKeyRef:
-              name: keycloak-config
-              key: KC_PROXY
+          value: edge
         - name: KC_HTTP_ENABLED
-          valueFrom:
-            configMapKeyRef:
-              name: keycloak-config
-              key: KC_HTTP_ENABLED
+          value: "true"
         - name: KC_HEALTH_ENABLED
-          valueFrom:
-            configMapKeyRef:
-              name: keycloak-config
-              key: KC_HEALTH_ENABLED
+          value: "true"
         - name: KC_METRICS_ENABLED
-          valueFrom:
-            configMapKeyRef:
-              name: keycloak-config
-              key: KC_METRICS_ENABLED
+          value: "true"
         volumeMounts:
         - name: realm-config
           mountPath: /opt/keycloak/data/import
