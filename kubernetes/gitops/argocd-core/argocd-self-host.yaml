@@ -7,9 +7,6 @@ metadata:
   namespace: gitops
   finalizers:
     - resources-finalizer.argocd.argoproj.io
-  annotations:
-    # Use the dedicated service account for self-management
-    argocd.argoproj.io/sync-options: ServerSideApply=true
 spec:
   project: default
   
