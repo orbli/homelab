@@ -1,0 +1,29 @@
+# Service Account for ArgoCD Self-Management
+# This service account has full permissions to manage ArgoCD itself
+# following the "App of Apps" pattern best practice
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-self-manager
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: argocd-self-manager
+    app.kubernetes.io/part-of: argocd
+    app.kubernetes.io/component: application-controller
+
+---
+# Grant cluster-admin permissions for full self-management
+# In production, you'd want to restrict this to specific resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-self-manager-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: argocd-self-manager
+  namespace: gitops
