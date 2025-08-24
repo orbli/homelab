@@ -119,12 +119,21 @@
       changed_when: true
 
     # STAGE 5: Wait for Keycloak to be ready
-    - name: "Stage 5: Wait for Keycloak to be ready"
+    # Note: Initial startup can take 2-3 minutes on Raspberry Pi due to build optimization
+    - name: "Stage 5: Wait for Keycloak pod to exist"
       shell: |
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=keycloak -n {{ namespace }} --timeout=300s
+        kubectl get pod -l app.kubernetes.io/name=keycloak -n {{ namespace }} --no-headers | wc -l
+      register: keycloak_pod_count
+      until: keycloak_pod_count.stdout | int > 0
+      retries: 30
+      delay: 10
+    
+    - name: "Stage 5: Wait for Keycloak to be ready (may take time on Pi)"
+      shell: |
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=keycloak -n {{ namespace }} --timeout=600s
       register: keycloak_ready
-      retries: 3
-      delay: 30
+      retries: 2
+      delay: 60
       until: keycloak_ready.rc == 0
       ignore_errors: yes
 
