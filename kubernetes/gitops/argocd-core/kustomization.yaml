@@ -16,7 +16,9 @@ configMapGenerator:
 
 # Reference to the official ArgoCD Core manifest
 resources:
+- namespace.yaml  # Create namespace first
 - https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/core-install.yaml  # UPDATE 2: Change version here too
+- default-project.yaml  # Create default AppProject
 - argocd-self-management-rbac.yaml  # Grant cluster-admin for self-management
 
 # Optional: Resource adjustments for Raspberry Pi

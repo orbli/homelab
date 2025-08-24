@@ -1,6 +1,7 @@
 ---
 # Install ArgoCD Core (headless - no UI/server)
 # Using Kustomization from Git repository for single source of truth
+# Note: Namespace and default AppProject are now managed via Kustomize
 
 - name: Install ArgoCD Core (Headless)
   hosts: localhost
@@ -14,13 +15,7 @@
     kustomize_path: kubernetes/gitops/argocd-core
     
   tasks:
-    - name: Create gitops namespace
-      kubernetes.core.k8s:
-        name: "{{ namespace }}"
-        api_version: v1
-        kind: Namespace
-        state: present
-
+    # Namespace is now created via Kustomize in argocd-core/namespace.yaml
     - name: Apply ArgoCD Core using Kustomize from Git
       shell: |
         kubectl apply -k "{{ git_repo }}/{{ kustomize_path }}?ref={{ git_branch }}"
@@ -63,34 +58,7 @@
       register: crd_check
       changed_when: "'created' in crd_check.stdout"
     
-    # Create default AppProject if it doesn't exist
-    - name: Check if default AppProject exists
-      kubernetes.core.k8s_info:
-        api_version: argoproj.io/v1alpha1
-        kind: AppProject
-        name: default
-        namespace: "{{ namespace }}"
-      register: default_project
-    
-    - name: Create default AppProject
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: argoproj.io/v1alpha1
-          kind: AppProject
-          metadata:
-            name: default
-            namespace: "{{ namespace }}"
-          spec:
-            clusterResourceWhitelist:
-            - group: '*'
-              kind: '*'
-            destinations:
-            - namespace: '*'
-              server: '*'
-            sourceRepos:
-            - '*'
-      when: default_project.resources | length == 0
+    # Default AppProject is now created via Kustomize in argocd-core/default-project.yaml
 
     - name: Get running pods
       shell: kubectl get pods -n {{ namespace }} --no-headers | grep -v Completed | awk '{print $1}'
