@@ -55,6 +55,43 @@
       retries: 30
       delay: 10
 
+    # Ensure CRDs are properly installed (sometimes applications CRD is missed)
+    - name: Verify applications CRD exists
+      shell: |
+        kubectl get crd applications.argoproj.io || \
+        kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/crds/application-crd.yaml
+      register: crd_check
+      changed_when: "'created' in crd_check.stdout"
+    
+    # Create default AppProject if it doesn't exist
+    - name: Check if default AppProject exists
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: AppProject
+        name: default
+        namespace: "{{ namespace }}"
+      register: default_project
+    
+    - name: Create default AppProject
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: AppProject
+          metadata:
+            name: default
+            namespace: "{{ namespace }}"
+          spec:
+            clusterResourceWhitelist:
+            - group: '*'
+              kind: '*'
+            destinations:
+            - namespace: '*'
+              server: '*'
+            sourceRepos:
+            - '*'
+      when: default_project.resources | length == 0
+
     - name: Get running pods
       shell: kubectl get pods -n {{ namespace }} --no-headers | grep -v Completed | awk '{print $1}'
       register: running_pods
