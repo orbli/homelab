@@ -33,6 +33,8 @@ spec:
         - gitops
         - --port
         - "8080"
+        - --address
+        - "0.0.0.0"
         env:
         - name: ARGOCD_SERVER_INSECURE
           value: "true"
