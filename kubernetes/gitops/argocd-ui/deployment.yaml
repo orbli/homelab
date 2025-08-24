@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
       - name: argocd-server
-        image: quay.io/argoproj/argocd:v2.13.1
+        image: quay.io/argoproj/argocd:v3.1.0
         imagePullPolicy: IfNotPresent
         command:
         - argocd-server
