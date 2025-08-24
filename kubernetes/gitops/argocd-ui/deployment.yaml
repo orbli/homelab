@@ -19,7 +19,6 @@ spec:
         app.kubernetes.io/part-of: argocd
         app.kubernetes.io/component: ui
     spec:
-      automountServiceAccountToken: false
       containers:
       - name: argocd-server
         image: quay.io/argoproj/argocd:v3.1.0
