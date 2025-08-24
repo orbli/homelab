@@ -6,6 +6,5 @@ namespace: iam
 resources:
 # Realm configurations
 - orbb-li-realm.yaml
-# Note: master-realm-user.yaml won't work for modifying master realm
-# but we include it for documentation purposes
-#- master-realm-user.yaml
+# Note: Master realm is Keycloak's internal admin realm
+# User access is managed via keycloak-initial-admin secret

@@ -94,6 +94,33 @@
       changed_when: true
       delegate_to: localhost
 
+    # STAGE 3.5: Sync instance app to create KeycloakRealmImport resources
+    - name: Sync keycloak-instance application to create realm resources
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync keycloak-instance --retry-limit 3
+      register: sync_instance
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Wait for KeycloakRealmImport to be created
+      shell: |
+        kubectl get keycloakrealmimport orbb-li-realm -n {{ namespace }}
+      register: realm_check
+      until: realm_check.rc == 0
+      retries: 10
+      delay: 2
+      delegate_to: localhost
+
+    # Patch the realm with actual Google user ID
+    - name: Patch orbb.li realm with Google user ID
+      shell: |
+        kubectl patch keycloakrealmimport orbb-li-realm -n {{ namespace }} --type json -p='[
+          {"op": "replace", "path": "/spec/realm/users/0/federatedIdentities/0/userId", "value": "{{ google_mailorbbli_userid }}"}
+        ]'
+      register: patch_realm
+      changed_when: true
+      delegate_to: localhost
+
     # STAGE 4: Monitor deployment status
     - name: Wait for keycloak-operator to be healthy
       shell: |
@@ -111,27 +138,6 @@
       retries: 3
       delay: 10
       until: instance_health.rc == 0
-      delegate_to: localhost
-    
-    # STAGE 5: Patch realm configuration with actual credentials
-    - name: Wait for realm import to exist
-      shell: |
-        kubectl get keycloakrealmimport orbb-li-realm -n {{ namespace }}
-      register: realm_check
-      until: realm_check.rc == 0
-      retries: 10
-      delay: 5
-      delegate_to: localhost
-
-    - name: Patch realm with Google OAuth credentials and user ID
-      shell: |
-        kubectl patch keycloakrealmimport orbb-li-realm -n {{ namespace }} --type json -p='[
-          {"op": "replace", "path": "/spec/realm/identityProviders/0/config/clientId", "value": "{{ google_client_id }}"},
-          {"op": "replace", "path": "/spec/realm/identityProviders/0/config/clientSecret", "value": "{{ google_client_secret }}"},
-          {"op": "replace", "path": "/spec/realm/users/0/federatedIdentities/0/userId", "value": "{{ google_mailorbbli_userid }}"}
-        ]'
-      register: patch_realm
-      changed_when: true
       delegate_to: localhost
 
     - name: Display deployment status

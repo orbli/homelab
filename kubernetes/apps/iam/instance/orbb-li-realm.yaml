@@ -32,7 +32,7 @@ spec:
       - name: user
         description: Regular user role
     
-    # Predefined users
+    # Predefined admin user
     users:
     - username: "orb.li"
       email: "mail@orbb.li"
@@ -60,7 +60,7 @@ spec:
         - view-identity-providers
       federatedIdentities:
       - identityProvider: google
-        userId: "GOOGLE_MAILORBBLI_USERID_PLACEHOLDER"
+        userId: "GOOGLE_USERID_PLACEHOLDER"  # Replaced by Ansible from secrets
         userName: "mail@orbb.li"
     
     # Google OAuth Identity Provider

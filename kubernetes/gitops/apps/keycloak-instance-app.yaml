@@ -20,14 +20,22 @@ spec:
   syncPolicy:
     automated:
       prune: true
-      selfHeal: true
+      selfHeal: false  # Disabled to preserve Ansible patches
       allowEmpty: false
     syncOptions:
       - CreateNamespace=false  # Namespace created by secrets app
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
         duration: 5s
         factor: 2
         maxDuration: 3m
+  ignoreDifferences:
+  # Ignore changes to federated identity user IDs (managed by Ansible)
+  - group: k8s.keycloak.org
+    kind: KeycloakRealmImport
+    name: orbb-li-realm
+    jsonPointers:
+    - /spec/realm/users/0/federatedIdentities/0/userId
