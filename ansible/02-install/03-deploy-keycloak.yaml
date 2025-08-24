@@ -1,9 +1,13 @@
 ---
 # 03 - Keycloak Deployment via ArgoCD
 # This playbook:
-# 1. Creates namespace and secrets with real passwords
-# 2. Deploys ArgoCD Applications to manage Keycloak
-# ArgoCD then handles all declarative resources
+# 1. Deploys ArgoCD Applications (which create namespace and placeholder secrets)
+# 2. Patches the secrets with real passwords (ArgoCD ignores these changes)
+# 3. Monitors deployment health
+# 
+# Note: ArgoCD won't override the patched secrets because:
+# - selfHeal is disabled for keycloak-secrets app
+# - ignoreDifferences is configured for /data in secrets
 
 - name: Deploy Keycloak via ArgoCD
   hosts: localhost
@@ -28,54 +32,7 @@
       include_vars: "{{ secrets_file }}"
       no_log: true
 
-    # STAGE 1: Create namespace (if it doesn't exist)
-    - name: Create IAM namespace
-      kubernetes.core.k8s:
-        name: "{{ namespace }}"
-        api_version: v1
-        kind: Namespace
-        state: present
-      delegate_to: localhost
-
-    # STAGE 2: Create secrets with real passwords
-    - name: Create PostgreSQL credentials secret
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: postgres-credentials
-            namespace: "{{ namespace }}"
-            labels:
-              app.kubernetes.io/managed-by: ansible
-              app.kubernetes.io/part-of: keycloak
-          type: Opaque
-          data:
-            POSTGRES_USER: "{{ 'keycloak' | b64encode }}"
-            POSTGRES_PASSWORD: "{{ postgres_password | b64encode }}"
-            POSTGRES_DB: "{{ 'keycloak' | b64encode }}"
-      delegate_to: localhost
-
-    - name: Create Keycloak database secret
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: keycloak-db-secret
-            namespace: "{{ namespace }}"
-            labels:
-              app.kubernetes.io/managed-by: ansible
-              app.kubernetes.io/part-of: keycloak
-          type: Opaque
-          data:
-            username: "{{ 'keycloak' | b64encode }}"
-            password: "{{ postgres_password | b64encode }}"
-      delegate_to: localhost
-
-    # STAGE 3: Deploy ArgoCD Applications
+    # STAGE 1: Deploy ArgoCD Applications (creates namespace and placeholder secrets)
     - name: Apply ArgoCD Applications for Keycloak
       shell: |
         kubectl apply -k {{ argocd_apps_path }}
@@ -92,7 +49,7 @@
       delay: 5
       delegate_to: localhost
 
-    # STAGE 4: Trigger initial sync for secrets app (since it won't auto-sync)
+    # STAGE 2: Sync secrets app to create namespace and placeholder secrets
     - name: Sync keycloak-secrets application
       shell: |
         ARGOCD_OPTS="--core" argocd app sync keycloak-secrets --retry-limit 3
@@ -100,7 +57,44 @@
       changed_when: true
       delegate_to: localhost
 
-    # STAGE 5: Monitor deployment status
+    - name: Wait for namespace to exist
+      shell: |
+        kubectl get namespace {{ namespace }}
+      register: ns_check
+      until: ns_check.rc == 0
+      retries: 10
+      delay: 2
+      delegate_to: localhost
+
+    - name: Wait for placeholder secrets to be created
+      shell: |
+        kubectl get secret postgres-credentials keycloak-db-secret -n {{ namespace }}
+      register: secrets_check
+      until: secrets_check.rc == 0
+      retries: 10
+      delay: 2
+      delegate_to: localhost
+
+    # STAGE 3: Patch secrets with real passwords (ArgoCD will ignore these changes)
+    - name: Patch PostgreSQL credentials with actual password
+      shell: |
+        echo -n "{{ postgres_password }}" | base64 | xargs -I {} kubectl patch secret postgres-credentials -n {{ namespace }} --type json -p='[
+          {"op": "replace", "path": "/data/POSTGRES_PASSWORD", "value": "{}"}
+        ]'
+      register: patch_postgres
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Patch Keycloak database secret with actual password
+      shell: |
+        echo -n "{{ postgres_password }}" | base64 | xargs -I {} kubectl patch secret keycloak-db-secret -n {{ namespace }} --type json -p='[
+          {"op": "replace", "path": "/data/password", "value": "{}"}
+        ]'
+      register: patch_keycloak_db
+      changed_when: true
+      delegate_to: localhost
+
+    # STAGE 4: Monitor deployment status
     - name: Wait for keycloak-operator to be healthy
       shell: |
         ARGOCD_OPTS="--core" argocd app wait keycloak-operator --health --timeout 300
