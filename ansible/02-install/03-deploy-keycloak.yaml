@@ -1,5 +1,5 @@
 ---
-# Keycloak Deployment via ArgoCD
+# 03 - Keycloak Deployment via ArgoCD
 # This playbook:
 # 1. Creates namespace and secrets with real passwords
 # 2. Deploys ArgoCD Applications to manage Keycloak
