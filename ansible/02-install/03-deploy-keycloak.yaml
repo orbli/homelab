@@ -111,13 +111,23 @@
       delay: 2
       delegate_to: localhost
 
-    # Patch the realm with actual Google user ID
+    # Patch the realm with actual Google user ID and OAuth credentials
     - name: Patch orbb.li realm with Google user ID
       shell: |
         kubectl patch keycloakrealmimport orbb-li-realm -n {{ namespace }} --type json -p='[
           {"op": "replace", "path": "/spec/realm/users/0/federatedIdentities/0/userId", "value": "{{ google_mailorbbli_userid }}"}
         ]'
       register: patch_realm
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Patch orbb.li realm with Google OAuth credentials
+      shell: |
+        kubectl patch keycloakrealmimport orbb-li-realm -n {{ namespace }} --type json -p='[
+          {"op": "replace", "path": "/spec/realm/identityProviders/0/config/clientId", "value": "{{ google_client_id }}"},
+          {"op": "replace", "path": "/spec/realm/identityProviders/0/config/clientSecret", "value": "{{ google_client_secret }}"}
+        ]'
+      register: patch_oauth
       changed_when: true
       delegate_to: localhost
 

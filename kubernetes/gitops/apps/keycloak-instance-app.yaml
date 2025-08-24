@@ -33,9 +33,11 @@ spec:
         factor: 2
         maxDuration: 3m
   ignoreDifferences:
-  # Ignore changes to federated identity user IDs (managed by Ansible)
+  # Ignore changes to federated identity user IDs and OAuth credentials (managed by Ansible)
   - group: k8s.keycloak.org
     kind: KeycloakRealmImport
     name: orbb-li-realm
     jsonPointers:
     - /spec/realm/users/0/federatedIdentities/0/userId
+    - /spec/realm/identityProviders/0/config/clientId
+    - /spec/realm/identityProviders/0/config/clientSecret
