@@ -25,16 +25,14 @@ spec:
         image: quay.io/argoproj/argocd:v3.1.0
         imagePullPolicy: IfNotPresent
         command:
-        - argocd-server
+        - argocd
         args:
-        - --insecure
-        - --disable-auth
-        - --repo-server
-        - argocd-repo-server:8081
-        - --redis
-        - argocd-redis:6379
-        - --loglevel
-        - info
+        - admin
+        - dashboard
+        - --namespace
+        - gitops
+        - --port
+        - "8080"
         env:
         - name: ARGOCD_SERVER_INSECURE
           value: "true"
