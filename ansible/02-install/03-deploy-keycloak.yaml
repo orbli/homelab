@@ -94,41 +94,132 @@
       changed_when: true
       delegate_to: localhost
 
-    # STAGE 3.5: Sync instance app to create KeycloakRealmImport resources
-    - name: Sync keycloak-instance application to create realm resources
+    # STAGE 3.5: Handle KeycloakRealmImport with patching
+    # Since KeycloakRealmImport processes immediately, we need to delete any existing one first
+    - name: Delete existing realm import if present
       shell: |
-        ARGOCD_OPTS="--core" argocd app sync keycloak-instance --retry-limit 3
-      register: sync_instance
+        kubectl delete keycloakrealmimport orbb-li-realm -n {{ namespace }} --ignore-not-found=true
+      register: delete_realm
       changed_when: true
       delegate_to: localhost
 
-    - name: Wait for KeycloakRealmImport to be created
-      shell: |
-        kubectl get keycloakrealmimport orbb-li-realm -n {{ namespace }}
-      register: realm_check
-      until: realm_check.rc == 0
-      retries: 10
-      delay: 2
+    - name: Wait for realm deletion to complete
+      pause:
+        seconds: 3
+      when: delete_realm.stdout != ""
+
+    # Create realm YAML with substituted values in a temp file
+    - name: Create realm configuration with actual values
+      copy:
+        content: |
+          apiVersion: k8s.keycloak.org/v2alpha1
+          kind: KeycloakRealmImport
+          metadata:
+            name: orbb-li-realm
+            namespace: {{ namespace }}
+          spec:
+            keycloakCRName: keycloak
+            realm:
+              realm: orbb.li
+              enabled: true
+              displayName: "Orbb.li Realm"
+              sslRequired: external
+              registrationAllowed: false
+              loginWithEmailAllowed: true
+              duplicateEmailsAllowed: false
+              resetPasswordAllowed: true
+              editUsernameAllowed: false
+              bruteForceProtected: true
+              roles:
+                realm:
+                - name: admin
+                  description: Administrator role
+                - name: user
+                  description: Regular user role
+              users:
+              - username: "orb.li"
+                email: "mail@orbb.li"
+                emailVerified: true
+                enabled: true
+                firstName: "Orb"
+                lastName: "Li"
+                realmRoles:
+                - admin
+                - user
+                clientRoles:
+                  realm-management:
+                  - realm-admin
+                  - manage-realm
+                  - manage-users
+                  - manage-clients
+                  - manage-authorization
+                  - manage-events
+                  - manage-identity-providers
+                  - view-realm
+                  - view-users
+                  - view-clients
+                  - view-authorization
+                  - view-events
+                  - view-identity-providers
+                federatedIdentities:
+                - identityProvider: google
+                  userId: "{{ google_mailorbbli_userid }}"
+                  userName: "mail@orbb.li"
+              identityProviders:
+              - alias: google
+                providerId: google
+                enabled: true
+                trustEmail: true
+                storeToken: false
+                addReadTokenRoleOnCreate: false
+                authenticateByDefault: false
+                linkOnly: false
+                firstBrokerLoginFlowAlias: first broker login
+                config:
+                  clientId: "{{ google_client_id }}"
+                  clientSecret: "{{ google_client_secret }}"
+                  defaultScope: "openid email profile"
+                  hostedDomain: "orbb.li"
+                  useJwksUrl: "true"
+                  hideOnLoginPage: "false"
+                  syncMode: "FORCE"
+              browserFlow: browser
+              registrationFlow: registration
+              directGrantFlow: direct grant
+              resetCredentialsFlow: reset credentials
+              clientAuthenticationFlow: clients
+              dockerAuthenticationFlow: docker auth
+              attributes:
+                frontendUrl: "https://keycloak-lab.orbb.li"
+                _browser_header.contentSecurityPolicy: "frame-src 'self'; frame-ancestors 'self'; object-src 'none';"
+              eventsEnabled: true
+              eventsListeners:
+              - jboss-logging
+              enabledEventTypes:
+              - LOGIN
+              - LOGIN_ERROR
+              - LOGOUT
+              - LOGOUT_ERROR
+              - REGISTER
+              - REGISTER_ERROR
+              - CODE_TO_TOKEN
+              - CODE_TO_TOKEN_ERROR
+              adminEventsEnabled: true
+              adminEventsDetailsEnabled: true
+        dest: /tmp/orbb-li-realm-substituted.yaml
       delegate_to: localhost
 
-    # Patch the realm with actual Google user ID and OAuth credentials
-    - name: Patch orbb.li realm with Google user ID
+    - name: Apply realm with substituted values
       shell: |
-        kubectl patch keycloakrealmimport orbb-li-realm -n {{ namespace }} --type json -p='[
-          {"op": "replace", "path": "/spec/realm/users/0/federatedIdentities/0/userId", "value": "{{ google_mailorbbli_userid }}"}
-        ]'
-      register: patch_realm
+        kubectl apply -f /tmp/orbb-li-realm-substituted.yaml
+      register: apply_realm
       changed_when: true
       delegate_to: localhost
 
-    - name: Patch orbb.li realm with Google OAuth credentials
-      shell: |
-        kubectl patch keycloakrealmimport orbb-li-realm -n {{ namespace }} --type json -p='[
-          {"op": "replace", "path": "/spec/realm/identityProviders/0/config/clientId", "value": "{{ google_client_id }}"},
-          {"op": "replace", "path": "/spec/realm/identityProviders/0/config/clientSecret", "value": "{{ google_client_secret }}"}
-        ]'
-      register: patch_oauth
-      changed_when: true
+    - name: Clean up temp file
+      file:
+        path: /tmp/orbb-li-realm-substituted.yaml
+        state: absent
       delegate_to: localhost
 
     # STAGE 4: Monitor deployment status
