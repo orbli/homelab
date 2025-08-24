@@ -4,9 +4,6 @@ kind: Kustomization
 namespace: gitops
 
 resources:
-# ArgoCD UI Application
-- argocd-ui-app.yaml
-
 # Keycloak Applications (in order of sync wave)
 - keycloak-secrets-app.yaml    # Wave 10: Namespace and secrets
 - keycloak-operator-app.yaml   # Wave 20: Operator and PostgreSQL

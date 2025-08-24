@@ -1,6 +1,7 @@
 ---
 # Enable ArgoCD self-hosting - ArgoCD manages its own deployment from Git
 # This creates a GitOps loop where ArgoCD watches its own configuration
+# Note: The Application manifest is now stored in Git, not hardcoded here
 
 - name: Configure ArgoCD Self-Hosting
   hosts: localhost
@@ -34,58 +35,12 @@
       register: crd_check
       failed_when: crd_check.resources | length == 0
 
-    - name: Apply self-hosting Application manifest
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: argoproj.io/v1alpha1
-          kind: Application
-          metadata:
-            name: argocd-self-host
-            namespace: "{{ namespace }}"
-            finalizers:
-              - resources-finalizer.argocd.argoproj.io
-          spec:
-            project: default
-            
-            source:
-              repoURL: "{{ git_repo }}"
-              targetRevision: "{{ git_branch }}"
-              path: "{{ argocd_config_path }}"
-              # Use Kustomize to process the configuration
-              kustomize: {}
-            
-            destination:
-              server: https://kubernetes.default.svc
-              namespace: "{{ namespace }}"
-            
-            syncPolicy:
-              automated:
-                prune: true
-                selfHeal: true
-                allowEmpty: false
-              syncOptions:
-                - CreateNamespace=false  # Namespace already exists
-                - ServerSideApply=true
-                - PrunePropagationPolicy=foreground
-                - RespectIgnoreDifferences=true
-              retry:
-                limit: 5
-                backoff:
-                  duration: 5s
-                  factor: 2
-                  maxDuration: 3m
-            
-            # Ignore differences that are expected in self-hosted ArgoCD
-            ignoreDifferences:
-            - group: apps
-              kind: Deployment
-              jsonPointers:
-              - /spec/replicas
-            - group: apps
-              kind: StatefulSet
-              jsonPointers:
-              - /spec/replicas
+    # Apply self-hosting Application from Git (not hardcoded)
+    - name: Apply self-hosting Application manifest from Git
+      shell: |
+        kubectl apply -f https://raw.githubusercontent.com/orbli/homelab/{{ git_branch }}/{{ argocd_config_path }}/argocd-self-host.yaml
+      register: apply_result
+      changed_when: "'configured' in apply_result.stdout or 'created' in apply_result.stdout"
 
     - name: Wait for Application to be created
       kubernetes.core.k8s_info:
