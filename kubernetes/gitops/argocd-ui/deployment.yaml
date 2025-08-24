@@ -35,8 +35,10 @@ spec:
         - argocd-repo-server:8081
         - --redis
         - argocd-redis:6379
+        - --application-namespaces
+        - "*"
         - --loglevel
-        - info
+        - debug
         env:
         - name: ARGOCD_SERVER_INSECURE
           value: "true"
