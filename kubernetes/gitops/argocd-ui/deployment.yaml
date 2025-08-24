@@ -29,16 +29,12 @@ spec:
         args:
         - --insecure
         - --disable-auth
-        - --port
-        - "8080"
         - --repo-server
         - argocd-repo-server:8081
         - --redis
         - argocd-redis:6379
-        - --application-namespaces
-        - "*"
         - --loglevel
-        - debug
+        - info
         env:
         - name: ARGOCD_SERVER_INSECURE
           value: "true"
