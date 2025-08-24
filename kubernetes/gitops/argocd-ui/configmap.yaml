@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-ui-cm
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: argocd-ui
+    app.kubernetes.io/part-of: argocd
+    app.kubernetes.io/component: ui
+data:
+  # UI specific configuration
+  ui.disableAuth: "true"
+  ui.insecure: "true"
+  # Optional: Add custom banner message
+  ui.bannercontent: "ArgoCD UI for Headless Core Deployment"
+  ui.bannerposition: "top"

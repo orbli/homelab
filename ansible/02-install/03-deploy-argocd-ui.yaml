@@ -1,0 +1,72 @@
+---
+# Deploy ArgoCD UI for headless ArgoCD installation
+# This creates an ArgoCD Application that manages the UI deployment
+
+- name: Deploy ArgoCD UI Application
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    gitops_namespace: gitops
+    argocd_ui_app_path: "/home/eli/workbench/homelab/kubernetes/gitops/apps/argocd-ui-app.yaml"
+    
+  tasks:
+    - name: Check if ArgoCD is running in core mode
+      shell: |
+        kubectl get pods -n {{ gitops_namespace }} -l app.kubernetes.io/name=argocd-application-controller --no-headers | wc -l
+      register: argocd_check
+      changed_when: false
+      failed_when: argocd_check.stdout | int == 0
+
+    - name: Apply ArgoCD UI Application
+      kubernetes.core.k8s:
+        src: "{{ argocd_ui_app_path }}"
+        state: present
+      register: app_result
+
+    - name: Wait for ArgoCD UI application to be created
+      shell: |
+        kubectl get application argocd-ui -n {{ gitops_namespace }}
+      register: app_check
+      until: app_check.rc == 0
+      retries: 10
+      delay: 5
+
+    - name: Sync ArgoCD UI application
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync argocd-ui --retry-limit 3
+      register: sync_result
+      changed_when: true
+
+    - name: Wait for ArgoCD UI to be healthy
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait argocd-ui --health --timeout 300
+      register: health_check
+      retries: 3
+      delay: 10
+      until: health_check.rc == 0
+
+    - name: Check ArgoCD UI pod status
+      shell: |
+        kubectl get pods -n {{ gitops_namespace }} -l app.kubernetes.io/name=argocd-ui
+      register: pod_status
+
+    - name: Display deployment information
+      debug:
+        msg: |
+          ArgoCD UI deployed successfully!
+          
+          {{ pod_status.stdout }}
+          
+          Access the UI:
+            kubectl port-forward -n {{ gitops_namespace }} svc/argocd-ui 8080:8080
+          
+          Then browse to:
+            http://localhost:8080
+          
+          Note: Authentication is disabled for this UI deployment.
+          
+          To check application status:
+            ARGOCD_OPTS="--core" argocd app get argocd-ui
+            kubectl get all -n {{ gitops_namespace }} -l app.kubernetes.io/name=argocd-ui
