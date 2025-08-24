@@ -52,18 +52,6 @@ spec:
         - containerPort: 8083
           name: metrics
           protocol: TCP
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
         resources:
           limits:
             memory: 256Mi
