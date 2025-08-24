@@ -32,6 +32,37 @@ spec:
       - name: user
         description: Regular user role
     
+    # Predefined users
+    users:
+    - username: "orb.li"
+      email: "mail@orbb.li"
+      emailVerified: true
+      enabled: true
+      firstName: "Orb"
+      lastName: "Li"
+      realmRoles:
+      - admin
+      - user
+      clientRoles:
+        realm-management:
+        - realm-admin
+        - manage-realm
+        - manage-users
+        - manage-clients
+        - manage-authorization
+        - manage-events
+        - manage-identity-providers
+        - view-realm
+        - view-users
+        - view-clients
+        - view-authorization
+        - view-events
+        - view-identity-providers
+      federatedIdentities:
+      - identityProvider: google
+        userId: "GOOGLE_MAILORBBLI_USERID_PLACEHOLDER"
+        userName: "mail@orbb.li"
+    
     # Google OAuth Identity Provider
     # Note: These placeholders will be replaced by Ansible with actual secrets
     identityProviders:
