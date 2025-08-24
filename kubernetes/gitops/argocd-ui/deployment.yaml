@@ -28,8 +28,6 @@ spec:
         args:
         - --insecure
         - --disable-auth
-        - --staticassets-dir
-        - /shared/app
         - --repo-server
         - argocd-repo-server:8081
         - --redis
@@ -71,16 +69,11 @@ spec:
             cpu: 50m
             memory: 128Mi
         volumeMounts:
-        - name: static-files
-          mountPath: /shared/app
-          readOnly: true
         - name: argocd-cm
           mountPath: /app/config/cm
         - name: argocd-rbac-cm
           mountPath: /app/config/rbac
       volumes:
-      - name: static-files
-        emptyDir: {}
       - name: argocd-cm
         configMap:
           name: argocd-cm
