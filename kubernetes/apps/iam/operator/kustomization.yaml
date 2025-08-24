@@ -47,19 +47,13 @@ patches:
       value: iam
 
 resources:
-# Namespace
-- namespace.yaml
-
 # Keycloak Operator CRDs and deployment from upstream
 - https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.3.3/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
 - https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.3.3/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
 - https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.3.3/kubernetes/kubernetes.yml
 
-# PostgreSQL resources
+# PostgreSQL deployment
 - postgres-deployment.yaml
-- postgres-secret.yaml
 
-# Keycloak resources
-- keycloak-db-secret.yaml
+# Keycloak CR
 - keycloak-cr.yaml
-# realm-import-cr.yaml is created dynamically by Ansible

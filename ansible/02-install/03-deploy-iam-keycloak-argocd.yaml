@@ -1,0 +1,164 @@
+---
+# Keycloak Deployment via ArgoCD
+# This playbook:
+# 1. Creates namespace and secrets with real passwords
+# 2. Deploys ArgoCD Applications to manage Keycloak
+# ArgoCD then handles all declarative resources
+
+- name: Deploy Keycloak via ArgoCD
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    namespace: iam
+    gitops_namespace: gitops
+    secrets_file: "../secrets/keycloak-secrets.yaml"
+    argocd_apps_path: "/home/eli/workbench/homelab/kubernetes/gitops/apps"
+    
+  tasks:
+    - name: Check if secrets file exists
+      stat:
+        path: "{{ secrets_file }}"
+      register: secrets_file_stat
+      failed_when: not secrets_file_stat.stat.exists
+      delegate_to: localhost
+
+    - name: Load secrets
+      include_vars: "{{ secrets_file }}"
+      no_log: true
+
+    # STAGE 1: Create namespace (if it doesn't exist)
+    - name: Create IAM namespace
+      kubernetes.core.k8s:
+        name: "{{ namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+      delegate_to: localhost
+
+    # STAGE 2: Create secrets with real passwords
+    - name: Create PostgreSQL credentials secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: postgres-credentials
+            namespace: "{{ namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: ansible
+              app.kubernetes.io/part-of: keycloak
+          type: Opaque
+          data:
+            POSTGRES_USER: "{{ 'keycloak' | b64encode }}"
+            POSTGRES_PASSWORD: "{{ postgres_password | b64encode }}"
+            POSTGRES_DB: "{{ 'keycloak' | b64encode }}"
+      delegate_to: localhost
+
+    - name: Create Keycloak database secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: keycloak-db-secret
+            namespace: "{{ namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: ansible
+              app.kubernetes.io/part-of: keycloak
+          type: Opaque
+          data:
+            username: "{{ 'keycloak' | b64encode }}"
+            password: "{{ postgres_password | b64encode }}"
+      delegate_to: localhost
+
+    # STAGE 3: Deploy ArgoCD Applications
+    - name: Apply ArgoCD Applications for Keycloak
+      shell: |
+        kubectl apply -k {{ argocd_apps_path }}
+      register: argocd_apps_result
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Wait for ArgoCD Applications to be created
+      shell: |
+        kubectl get application keycloak-secrets keycloak-operator keycloak-instance -n {{ gitops_namespace }}
+      register: apps_check
+      until: apps_check.rc == 0
+      retries: 10
+      delay: 5
+      delegate_to: localhost
+
+    # STAGE 4: Trigger initial sync for secrets app (since it won't auto-sync)
+    - name: Sync keycloak-secrets application
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync keycloak-secrets --retry-limit 3
+      register: sync_secrets
+      changed_when: true
+      delegate_to: localhost
+
+    # STAGE 5: Monitor deployment status
+    - name: Wait for keycloak-operator to be healthy
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait keycloak-operator --health --timeout 300
+      register: operator_health
+      retries: 3
+      delay: 10
+      until: operator_health.rc == 0
+      delegate_to: localhost
+
+    - name: Wait for keycloak-instance to be healthy
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait keycloak-instance --health --timeout 300
+      register: instance_health
+      retries: 3
+      delay: 10
+      until: instance_health.rc == 0
+      delegate_to: localhost
+
+    - name: Display deployment status
+      debug:
+        msg: |
+          Keycloak deployment completed via ArgoCD!
+          
+          Applications deployed:
+          - keycloak-secrets (namespace and secrets)
+          - keycloak-operator (operator and PostgreSQL)
+          - keycloak-instance (Keycloak realms)
+          
+          Access Keycloak at: https://keycloak-lab.orbb.li
+          
+          Monitor with:
+            ARGOCD_OPTS="--core" argocd app list
+            kubectl get all -n {{ namespace }}
+      delegate_to: localhost
+
+    # Optional: Create initial admin user (if needed)
+    - name: Check if Keycloak admin user should be created
+      shell: |
+        kubectl get secret keycloak-initial-admin -n {{ namespace }} 2>/dev/null
+      register: admin_secret_check
+      failed_when: false
+      changed_when: false
+      delegate_to: localhost
+
+    - name: Create Keycloak admin user secret (if not exists)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: keycloak-initial-admin
+            namespace: "{{ namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: ansible
+          type: Opaque
+          data:
+            username: "{{ 'admin' | b64encode }}"
+            password: "{{ keycloak_admin_password | b64encode }}"
+      when: admin_secret_check.rc != 0
+      delegate_to: localhost

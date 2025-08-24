@@ -5,6 +5,8 @@ metadata:
   namespace: gitops
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
 spec:
   project: default
   source:
@@ -21,12 +23,19 @@ spec:
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=true
+      - CreateNamespace=false  # Namespace created by secrets app
       - ServerSideApply=true
       - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
         duration: 5s
         factor: 2
         maxDuration: 3m
+  ignoreDifferences:
+  # Ignore secret data as it's managed by Ansible
+  - group: ""
+    kind: Secret
+    jsonPointers:
+    - /data
