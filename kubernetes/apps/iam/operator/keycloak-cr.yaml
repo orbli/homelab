@@ -7,8 +7,8 @@ spec:
   instances: 1
   image: quay.io/keycloak/keycloak:26.3.3
   
-  # Enable optimized flag for faster startup
-  startOptimized: true
+  # Disable optimized flag to avoid startup issues
+  startOptimized: false
   
   # Database configuration
   db:
