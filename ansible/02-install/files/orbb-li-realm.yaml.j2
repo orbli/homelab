@@ -10,7 +10,7 @@ spec:
     enabled: true
     displayName: "Orbb.li Realm"
     sslRequired: external
-    registrationAllowed: false
+    registrationAllowed: true  # Allow new users from Google
     loginWithEmailAllowed: true
     duplicateEmailsAllowed: false
     resetPasswordAllowed: true
@@ -69,7 +69,7 @@ spec:
       providerId: google
       enabled: true
       trustEmail: true
-      storeToken: false
+      storeToken: true  # Store token for better integration
       addReadTokenRoleOnCreate: false
       authenticateByDefault: false
       linkOnly: false
@@ -78,10 +78,10 @@ spec:
         clientId: "{{ google_client_id }}"
         clientSecret: "{{ google_client_secret }}"
         defaultScope: "openid email profile"
-        hostedDomain: "orbb.li"
+        # hostedDomain removed - allows any Google account
         useJwksUrl: "true"
         hideOnLoginPage: "false"
-        syncMode: "FORCE"
+        syncMode: "IMPORT"  # Import user data from Google
     
     # Browser flow settings
     browserFlow: browser
