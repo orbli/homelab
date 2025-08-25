@@ -47,7 +47,7 @@
 
     - name: Wait for ArgoCD Applications to be created
       shell: |
-        kubectl get application keycloak-secrets keycloak-operator keycloak-instance -n {{ gitops_namespace }}
+        kubectl get application keycloak-secrets keycloak-operator -n {{ gitops_namespace }}
       register: apps_check
       until: apps_check.rc == 0
       retries: 10
@@ -162,24 +162,21 @@
       until: operator_health.rc == 0
       delegate_to: localhost
 
-    - name: Wait for keycloak-instance to be healthy
-      shell: |
-        ARGOCD_OPTS="--core" argocd app wait keycloak-instance --health --timeout 300
-      register: instance_health
-      retries: 3
-      delay: 10
-      until: instance_health.rc == 0
-      delegate_to: localhost
+    # Note: keycloak-instance app removed as realms are managed by Ansible
+    # The operator health check above ensures Keycloak itself is running
 
     - name: Display deployment status
       debug:
         msg: |
-          Keycloak deployment completed via ArgoCD!
+          Keycloak deployment completed!
           
-          Applications deployed:
-          - keycloak-secrets (namespace and secrets)
+          GitOps-managed (ArgoCD):
+          - keycloak-secrets (namespace and secrets placeholders)
           - keycloak-operator (operator and PostgreSQL)
-          - keycloak-instance (Keycloak realms)
+          
+          Ansible-managed:
+          - Secret values (patched after GitOps creates placeholders)
+          - KeycloakRealmImport (realm configuration with OAuth credentials)
           
           Access Keycloak at: https://keycloak-lab.orbb.li
           

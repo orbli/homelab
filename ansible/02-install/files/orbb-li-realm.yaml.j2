@@ -32,6 +32,17 @@ spec:
       - name: user
         description: Regular user role
     
+    # Default roles assigned to new users
+    defaultRoles:
+    - user
+    
+    # Default client scopes
+    defaultDefaultClientScopes:
+    - profile
+    - email
+    - roles
+    - web-origins
+    
     # Predefined admin user
     users:
     - username: "orb.li"
@@ -58,6 +69,10 @@ spec:
         - view-authorization
         - view-events
         - view-identity-providers
+        account:
+        - manage-account
+        - manage-account-links
+        - view-profile
       federatedIdentities:
       - identityProvider: google
         userId: "{{ google_mailorbbli_userid }}"
@@ -94,7 +109,6 @@ spec:
     # Realm attributes
     attributes:
       frontendUrl: "https://keycloak-lab.orbb.li"
-      _browser_header.contentSecurityPolicy: "frame-src 'self'; frame-ancestors 'self'; object-src 'none';"
     
     # Events configuration
     eventsEnabled: true

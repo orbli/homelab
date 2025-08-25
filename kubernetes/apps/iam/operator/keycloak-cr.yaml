@@ -7,8 +7,8 @@ spec:
   instances: 1
   image: quay.io/keycloak/keycloak:26.3.3
   
-  # Disable optimized flag for initial startup
-  startOptimized: false
+  # Enable optimized flag for faster startup
+  startOptimized: true
   
   # Database configuration
   db:
@@ -27,16 +27,18 @@ spec:
   http:
     httpEnabled: true
     
-  # Hostname configuration
+  # Hostname configuration - accessed via Cloudflare Tunnel
   hostname:
-    hostname: https://keycloak-lab.orbb.li
-    admin: https://keycloak-lab.orbb.li
+    hostname: keycloak-lab.orbb.li
+    admin: keycloak-lab.orbb.li
     strict: false
     strictBackchannel: false
+    forceBackendUrlToFrontendUrl: true
   
-  # Proxy configuration for running behind ingress
+  # Proxy configuration for Cloudflare Tunnel
   proxy:
     headers: xforwarded
+    forwardedHost: true
     
   # Transaction configuration
   transaction:
@@ -48,21 +50,26 @@ spec:
       value: "true"
     - name: metrics-enabled
       value: "true"
-    - name: log-level
-      value: "DEBUG"
-    - name: log-console-level
-      value: "DEBUG"
     - name: proxy
       value: "edge"
-    # Enable detailed logging for OAuth and authentication
-    - name: log-level:org.keycloak.broker
-      value: "TRACE"
-    - name: log-level:org.keycloak.services
-      value: "DEBUG"
-    - name: log-level:org.keycloak.authentication
-      value: "DEBUG"
-    - name: log-level:org.keycloak.events
-      value: "DEBUG"
+    - name: proxy-headers
+      value: "xforwarded"
+    - name: hostname-strict-https
+      value: "false"
+    - name: spi-sticky-session-encoder-infinispan-should-attach-route
+      value: "false"
+    - name: http-relative-path
+      value: "/"
+    - name: spi-login-protocol-openid-connect-legacy-logout-redirect-uri
+      value: "true"
+    - name: hostname-strict-backchannel
+      value: "false"
+    - name: hostname-url
+      value: "https://keycloak-lab.orbb.li"
+    - name: hostname-admin-url
+      value: "https://keycloak-lab.orbb.li"
+    - name: spi-account-rest-api-cookie-auth-enabled
+      value: "true"
     
   # Resource limits for Raspberry Pi
   resources:

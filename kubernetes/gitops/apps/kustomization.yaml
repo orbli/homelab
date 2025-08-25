@@ -7,4 +7,4 @@ resources:
 # Keycloak Applications (in order of sync wave)
 - keycloak-secrets-app.yaml    # Wave 10: Namespace and secrets
 - keycloak-operator-app.yaml   # Wave 20: Operator and PostgreSQL
-- keycloak-instance-app.yaml   # Wave 30: Keycloak realms
+# Note: keycloak-instance (realms) managed by Ansible, not GitOps
