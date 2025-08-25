@@ -31,6 +31,11 @@
     - name: Load secrets
       include_vars: "{{ secrets_file }}"
       no_log: true
+    
+    - name: Generate PostgreSQL password if not set
+      set_fact:
+        postgres_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      when: postgres_password is not defined or postgres_password == ""
 
     # STAGE 1: Deploy ArgoCD Applications (creates namespace and placeholder secrets)
     - name: Apply ArgoCD Applications for Keycloak
@@ -75,7 +80,7 @@
       delay: 2
       delegate_to: localhost
 
-    # STAGE 3: Patch secrets with real passwords (ArgoCD will ignore these changes)
+    # STAGE 3: Patch secrets with real passwords BEFORE operator starts
     - name: Patch PostgreSQL credentials with actual password
       shell: |
         echo -n "{{ postgres_password }}" | base64 | xargs -I {} kubectl patch secret postgres-credentials -n {{ namespace }} --type json -p='[
@@ -94,7 +99,24 @@
       changed_when: true
       delegate_to: localhost
 
-    # STAGE 3.5: Handle KeycloakRealmImport with patching
+    # STAGE 4: Sync operator to deploy PostgreSQL and Keycloak
+    - name: Sync keycloak-operator application
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync keycloak-operator --retry-limit 3
+      register: sync_operator
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Wait for PostgreSQL to be ready
+      shell: |
+        kubectl wait --for=condition=ready pod -l app=postgres-db -n {{ namespace }} --timeout=120s
+      register: postgres_ready
+      retries: 3
+      delay: 10
+      until: postgres_ready.rc == 0
+      delegate_to: localhost
+
+    # STAGE 5: Handle KeycloakRealmImport with patching
     # Since KeycloakRealmImport processes immediately, we need to delete any existing one first
     - name: Delete existing realm import if present
       shell: |
@@ -222,7 +244,7 @@
         state: absent
       delegate_to: localhost
 
-    # STAGE 4: Monitor deployment status
+    # STAGE 6: Monitor deployment status
     - name: Wait for keycloak-operator to be healthy
       shell: |
         ARGOCD_OPTS="--core" argocd app wait keycloak-operator --health --timeout 300
