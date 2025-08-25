@@ -60,11 +60,10 @@ spec:
         - view-identity-providers
       federatedIdentities:
       - identityProvider: google
-        userId: "GOOGLE_USERID_PLACEHOLDER"  # Replaced by Ansible from secrets
+        userId: "{{ google_mailorbbli_userid }}"
         userName: "mail@orbb.li"
     
     # Google OAuth Identity Provider
-    # Note: These placeholders will be replaced by Ansible with actual secrets
     identityProviders:
     - alias: google
       providerId: google
@@ -76,8 +75,8 @@ spec:
       linkOnly: false
       firstBrokerLoginFlowAlias: first broker login
       config:
-        clientId: "GOOGLE_CLIENT_ID_PLACEHOLDER"
-        clientSecret: "GOOGLE_CLIENT_SECRET_PLACEHOLDER"
+        clientId: "{{ google_client_id }}"
+        clientSecret: "{{ google_client_secret }}"
         defaultScope: "openid email profile"
         hostedDomain: "orbb.li"
         useJwksUrl: "true"

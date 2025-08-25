@@ -3,8 +3,10 @@ kind: Kustomization
 
 namespace: iam
 
-resources:
-# Realm configurations
-- orbb-li-realm.yaml
-# Note: Master realm is Keycloak's internal admin realm
-# User access is managed via keycloak-initial-admin secret
+# Note: KeycloakRealmImport is managed by Ansible directly
+# This avoids issues with one-time imports and secret substitution
+# The realm configuration is applied during deployment via Ansible
+
+resources: []
+# Realm configurations are handled by Ansible, not GitOps
+# This prevents ArgoCD sync issues with one-time imports
