@@ -49,9 +49,20 @@ spec:
     - name: metrics-enabled
       value: "true"
     - name: log-level
-      value: "INFO"
+      value: "DEBUG"
+    - name: log-console-level
+      value: "DEBUG"
     - name: proxy
       value: "edge"
+    # Enable detailed logging for OAuth and authentication
+    - name: log-level:org.keycloak.broker
+      value: "TRACE"
+    - name: log-level:org.keycloak.services
+      value: "DEBUG"
+    - name: log-level:org.keycloak.authentication
+      value: "DEBUG"
+    - name: log-level:org.keycloak.events
+      value: "DEBUG"
     
   # Resource limits for Raspberry Pi
   resources:
