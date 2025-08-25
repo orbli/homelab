@@ -29,8 +29,8 @@ spec:
     
   # Hostname configuration - accessed via Cloudflare Tunnel
   hostname:
-    hostname: keycloak-lab.orbb.li
-    admin: keycloak-lab.orbb.li
+    hostname: https://keycloak-lab.orbb.li
+    admin: https://keycloak-lab.orbb.li
     strict: false
     strictBackchannel: false
   
@@ -60,12 +60,6 @@ spec:
       value: "/"
     - name: spi-login-protocol-openid-connect-legacy-logout-redirect-uri
       value: "true"
-    - name: hostname-strict-backchannel
-      value: "false"
-    - name: hostname-url
-      value: "https://keycloak-lab.orbb.li"
-    - name: hostname-admin-url
-      value: "https://keycloak-lab.orbb.li"
     - name: spi-account-rest-api-cookie-auth-enabled
       value: "true"
     
