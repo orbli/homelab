@@ -33,12 +33,10 @@ spec:
     admin: keycloak-lab.orbb.li
     strict: false
     strictBackchannel: false
-    forceBackendUrlToFrontendUrl: true
   
   # Proxy configuration for Cloudflare Tunnel
   proxy:
     headers: xforwarded
-    forwardedHost: true
     
   # Transaction configuration
   transaction:
