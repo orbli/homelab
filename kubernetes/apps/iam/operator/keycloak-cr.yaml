@@ -1,0 +1,74 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: iam
+spec:
+  instances: 1
+  image: quay.io/keycloak/keycloak:26.3.3
+  
+  # Disable optimized flag to avoid startup issues
+  startOptimized: false
+  
+  # Database configuration
+  db:
+    vendor: postgres
+    host: postgres-db
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-secret
+      key: username
+    passwordSecret:
+      name: keycloak-db-secret  
+      key: password
+  
+  # HTTP/HTTPS configuration
+  http:
+    httpEnabled: true
+    
+  # Hostname configuration - accessed via Cloudflare Tunnel
+  hostname:
+    hostname: https://keycloak-lab.orbb.li
+    admin: https://keycloak-lab.orbb.li
+    strict: false
+    strictBackchannel: false
+  
+  # Proxy configuration for Cloudflare Tunnel
+  proxy:
+    headers: xforwarded
+    
+  # Transaction configuration
+  transaction:
+    xaEnabled: false
+  
+  # Additional options
+  additionalOptions:
+    - name: health-enabled
+      value: "true"
+    - name: metrics-enabled
+      value: "true"
+    - name: proxy
+      value: "edge"
+    - name: proxy-headers
+      value: "xforwarded"
+    - name: hostname-strict-https
+      value: "false"
+    - name: spi-sticky-session-encoder-infinispan-should-attach-route
+      value: "false"
+    - name: http-relative-path
+      value: "/"
+    - name: spi-login-protocol-openid-connect-legacy-logout-redirect-uri
+      value: "true"
+    
+  # Resource limits for Raspberry Pi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+      
+  # Disable unsupported features in operator
+  # The operator will automatically create keycloak-initial-admin secret

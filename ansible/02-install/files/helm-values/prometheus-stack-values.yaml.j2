@@ -1,0 +1,313 @@
+# kube-prometheus-stack Helm Chart Values
+# Generated for {{ namespace }} namespace
+
+# Prometheus Configuration
+prometheus:
+  prometheusSpec:
+    retention: {{ prometheus_retention }}
+    retentionSize: {{ prometheus_retention_size }}
+    
+    # Storage configuration
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: {{ storage_class }}
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: {{ prometheus_storage_size }}
+    
+    # Resource limits
+    resources:
+      requests:
+        memory: {{ prometheus_memory_request }}
+        cpu: {{ prometheus_cpu_request }}
+      limits:
+        memory: {{ prometheus_memory_limit }}
+        cpu: {{ prometheus_cpu_limit }}
+    
+    # Service monitor selectors - accept all
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    
+    # Additional scrape configs (if needed)
+    additionalScrapeConfigs: []
+
+# AlertManager Configuration
+alertmanager:
+  enabled: {{ alertmanager_enabled }}
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: {{ storage_class }}
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: {{ alertmanager_storage_size }}
+    
+    # Resource limits
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+# Grafana Configuration
+grafana:
+  enabled: true
+  
+  # Admin configuration - disabled since we use OAuth
+  adminUser: ""
+  adminPassword: ""
+  
+  # Persistence
+  persistence:
+    enabled: true
+    storageClassName: {{ storage_class }}
+    size: {{ grafana_storage_size }}
+  
+  # Resources
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+  
+  # Data sources configuration
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://{{ release_name }}-kube-prometheus-prometheus:9090
+          access: proxy
+          isDefault: true
+          jsonData:
+            timeInterval: "30s"
+        - name: Loki
+          type: loki
+          url: http://{{ loki_service }}.{{ namespace }}.svc.{{ cluster_domain }}:3100
+          access: proxy
+          jsonData:
+            maxLines: 1000
+        - name: AlertManager
+          type: alertmanager
+          url: http://{{ release_name }}-kube-prometheus-alertmanager:9093
+          access: proxy
+  
+  # Grafana.ini configuration
+  grafana.ini:
+    server:
+      domain: {{ grafana_domain }}
+      root_url: "https://{{ grafana_domain }}"
+      router_logging: true
+      enable_gzip: true
+    
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+    
+    security:
+      # Disable initial admin creation since we use OAuth
+      disable_initial_admin_creation: true
+      # Allow embedding
+      allow_embedding: true
+      cookie_secure: true
+      cookie_samesite: lax
+    
+    users:
+      allow_sign_up: false
+      allow_org_create: false
+      auto_assign_org: true
+      auto_assign_org_id: 1
+      auto_assign_org_role: {{ grafana_default_role }}
+      default_theme: dark
+    
+    auth:
+      disable_login_form: false
+      disable_signout_menu: false
+      oauth_auto_login: {{ oauth_auto_login }}
+    
+    auth.basic:
+      enabled: false
+    
+    auth.generic_oauth:
+      enabled: true
+      name: {{ oauth_provider_name }}
+      icon: signin
+      allow_sign_up: true
+      auto_login: false
+      client_id: {{ oauth_client_id }}
+      # Client secret will be loaded from mounted secret file
+      client_secret: "$__file{/etc/secrets/oauth/client-secret}"
+      scopes: {{ oauth_scopes }}
+      empty_scopes: false
+      # Keycloak endpoints with Google IDP hint
+      auth_url: {{ keycloak_auth_url }}
+      token_url: {{ keycloak_token_url }}
+      api_url: {{ keycloak_api_url }}
+      # Logout configuration
+      signout_redirect_url: {{ keycloak_logout_url }}
+      # Attribute mapping
+      email_attribute_path: email
+      name_attribute_path: full_name
+      login_attribute_path: username
+      # Role mapping - using JMESPath to map Keycloak roles to Grafana roles
+      role_attribute_path: "contains(resource_access.grafana.roles[*], 'Admin') && 'Admin' || contains(resource_access.grafana.roles[*], 'Editor') && 'Editor' || 'Viewer'"
+      role_attribute_strict: true
+      allow_assign_grafana_admin: true
+      # Use ID token for role extraction
+      id_token_attribute_name: id_token
+      # Additional settings
+      skip_org_role_sync: false
+      tls_skip_verify_insecure: false
+      use_pkce: false
+    
+    log:
+      mode: console
+      level: {{ grafana_log_level }}
+    
+    log.console:
+      format: json
+  
+  # Mount the OAuth secret
+  extraSecretMounts:
+    - name: grafana-oauth-secret
+      mountPath: /etc/secrets/oauth
+      secretName: {{ oauth_secret_name }}
+      readOnly: true
+  
+  # Environment variables
+  env:
+    GF_INSTALL_PLUGINS: {{ grafana_plugins }}
+  
+  # Sidecar configuration for loading dashboards
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      folder: /tmp/dashboards
+      provider:
+        name: sidecarProvider
+        orgid: 1
+        folder: ''
+        type: file
+        disableDelete: false
+        allowUiUpdates: true
+      searchNamespace: ALL
+    datasources:
+      enabled: false  # We define datasources above
+  
+  # Default dashboards
+  defaultDashboardsEnabled: true
+  defaultDashboardsTimezone: browser
+  
+  # Service Monitor for Prometheus to scrape Grafana metrics
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+  
+  # Network policy
+  networkPolicy:
+    enabled: false
+  
+  # RBAC configuration
+  rbac:
+    create: true
+    pspEnabled: false
+  
+  # Service account
+  serviceAccount:
+    create: true
+    name: grafana
+  
+  # Test framework
+  testFramework:
+    enabled: false
+
+# Node Exporter Configuration
+prometheus-node-exporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 64Mi
+
+# Kube State Metrics Configuration
+kube-state-metrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# Disable components we don't need
+kubeApiServer:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+# Default Prometheus Rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubelet: true
+    kubeProxy: false
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeScheduler: false
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# Prometheus Operator configuration
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

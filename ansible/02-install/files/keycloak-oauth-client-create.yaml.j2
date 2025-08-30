@@ -1,0 +1,185 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ app_name }}-keycloak-oauth-create
+  namespace: {{ namespace }}
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      volumes:
+      - name: shared-data
+        emptyDir: {}
+      initContainers:
+      - name: keycloak-client-creator
+        image: quay.io/keycloak/keycloak:25.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          
+          echo "Creating OAuth client for {{ app_name }}..."
+          
+          KEYCLOAK_URL="http://keycloak-service.{{ keycloak_namespace }}.svc.{{ cluster_domain | default('cluster.local') }}:8080"
+          
+          # Wait for Keycloak to be ready using kcadm
+          echo "Waiting for Keycloak to be ready..."
+          for i in {1..60}; do
+            if /opt/keycloak/bin/kcadm.sh config credentials \
+              --server "$KEYCLOAK_URL" \
+              --realm master \
+              --user "${KEYCLOAK_ADMIN}" \
+              --password "${KEYCLOAK_ADMIN_PASSWORD}" 2>/dev/null; then
+              echo "Successfully connected to Keycloak"
+              break
+            fi
+            echo "Waiting for Keycloak... (attempt $i/60)"
+            sleep 5
+          done
+          
+          # Generate a secure client secret using /dev/urandom
+          echo "Generating secure client secret..."
+          CLIENT_SECRET=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 32 | head -n 1)
+          
+          # Check if client already exists
+          echo "Checking if client {{ oauth_client_id | default(app_name) }} exists..."
+          EXISTING_CLIENT=$(/opt/keycloak/bin/kcadm.sh get clients \
+            -r {{ keycloak_realm }} \
+            --fields id,clientId \
+            --format csv \
+            --noquotes 2>/dev/null | grep "^.*,{{ oauth_client_id | default(app_name) }}$" | cut -d',' -f1 || true)
+          
+          if [ -n "$EXISTING_CLIENT" ]; then
+            echo "Client already exists with ID: $EXISTING_CLIENT"
+            echo "Updating existing client..."
+            
+            # Update existing client
+            /opt/keycloak/bin/kcadm.sh update clients/$EXISTING_CLIENT \
+              -r {{ keycloak_realm }} \
+              -s secret="$CLIENT_SECRET" \
+              -s 'redirectUris={{ oauth_redirect_uris | to_json }}' \
+              -s 'webOrigins={{ oauth_web_origins | default([app_root_url]) | to_json }}' \
+              -s enabled=true \
+              -s publicClient=false \
+              -s standardFlowEnabled=true \
+              -s implicitFlowEnabled={{ oauth_implicit_flow | default(false) | to_json }} \
+              -s directAccessGrantsEnabled={{ oauth_direct_access_grants | default(true) | to_json }} \
+              -s serviceAccountsEnabled={{ oauth_service_accounts | default(false) | to_json }} \
+              -s rootUrl="{{ app_root_url }}" \
+              -s adminUrl="{{ app_admin_url | default(app_root_url) }}" \
+              -s baseUrl="{{ app_base_url | default(app_root_url) }}" \
+              -s 'defaultClientScopes={{ oauth_default_scopes | default(["profile", "roles", "email"]) | to_json }}' \
+              -s 'optionalClientScopes={{ oauth_optional_scopes | default(["address", "phone"]) | to_json }}' \
+              -s 'attributes={{ oauth_client_attributes | default({}) | to_json }}'
+            
+            echo "Client updated successfully"
+          else
+            echo "Creating new client {{ oauth_client_id | default(app_name) }}..."
+            
+            # Create new client
+            /opt/keycloak/bin/kcadm.sh create clients \
+              -r {{ keycloak_realm }} \
+              -s clientId={{ oauth_client_id | default(app_name) }} \
+              -s name="{{ app_display_name | default(app_name | title) }}" \
+              -s description="{{ app_description | default(app_display_name | default(app_name | title) + ' Application') }}" \
+              -s secret="$CLIENT_SECRET" \
+              -s enabled=true \
+              -s publicClient=false \
+              -s standardFlowEnabled=true \
+              -s implicitFlowEnabled={{ oauth_implicit_flow | default(false) | to_json }} \
+              -s directAccessGrantsEnabled={{ oauth_direct_access_grants | default(true) | to_json }} \
+              -s serviceAccountsEnabled={{ oauth_service_accounts | default(false) | to_json }} \
+              -s 'redirectUris={{ oauth_redirect_uris | to_json }}' \
+              -s 'webOrigins={{ oauth_web_origins | default([app_root_url]) | to_json }}' \
+              -s rootUrl="{{ app_root_url }}" \
+              -s adminUrl="{{ app_admin_url | default(app_root_url) }}" \
+              -s baseUrl="{{ app_base_url | default(app_root_url) }}" \
+              -s 'defaultClientScopes={{ oauth_default_scopes | default(["profile", "roles", "email"]) | to_json }}' \
+              -s 'optionalClientScopes={{ oauth_optional_scopes | default(["address", "phone"]) | to_json }}' \
+              -s 'attributes={{ oauth_client_attributes | default({}) | to_json }}'
+            
+            echo "Client created successfully"
+          fi
+          
+          # Get the client ID for potential downstream use
+          CLIENT_ID=$(/opt/keycloak/bin/kcadm.sh get clients \
+            -r {{ keycloak_realm }} \
+            --fields id,clientId \
+            --format csv \
+            --noquotes | grep "^.*,{{ oauth_client_id | default(app_name) }}$" | cut -d',' -f1)
+          
+          echo "Client ID: $CLIENT_ID"
+          
+          # Store the client secret and ID for the next container to read
+          echo "Storing client information for next step..."
+          echo -n "$CLIENT_SECRET" > /shared/client-secret
+          echo -n "{{ oauth_client_id | default(app_name) }}" > /shared/client-id
+          echo -n "$CLIENT_ID" > /shared/client-internal-id
+          
+          echo "OAuth client setup completed successfully"
+          echo "Client ID: {{ oauth_client_id | default(app_name) }}"
+          echo "Ready for secret creation"
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: "{{ keycloak_admin_username }}"
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          value: "{{ keycloak_admin_password }}"
+      containers:
+      - name: secret-creator
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Creating Kubernetes secret for OAuth client..."
+          
+          CLIENT_ID=$(cat /shared/client-id)
+          CLIENT_SECRET=$(cat /shared/client-secret)
+          
+          kubectl create secret generic {{ oauth_secret_name | default(app_name + "-oauth-client") }} \
+            --from-literal=client-id="$CLIENT_ID" \
+            --from-literal=client-secret="$CLIENT_SECRET" \
+            --namespace={{ namespace }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          echo "Secret created successfully: {{ namespace }}/{{ oauth_secret_name | default(app_name + "-oauth-client") }}"
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      serviceAccountName: {{ app_name }}-oauth-setup
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ app_name }}-oauth-setup
+  namespace: {{ namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ app_name }}-oauth-setup
+  namespace: {{ namespace }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ app_name }}-oauth-setup
+  namespace: {{ namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ app_name }}-oauth-setup
+subjects:
+- kind: ServiceAccount
+  name: {{ app_name }}-oauth-setup
+  namespace: {{ namespace }}

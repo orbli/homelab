@@ -2,10 +2,7 @@
 - name: Install Tailscale Operator in Kubernetes
   hosts: localhost
   connection: local
-  vars:
-    tailscale_k8s_op_oauth_client_id: "{{ hostvars['sd1']['tailscale_k8s_op_oauth_client_id'] }}"
-    tailscale_k8s_op_oauth_client_secret: "{{ hostvars['sd1']['tailscale_k8s_op_oauth_client_secret'] }}"
-    tailscale_k8s_op_hostname: "{{ hostvars['sd1']['tailscale_k8s_op_hostname'] }}"
+  # Variables are inherited from on_prem group_vars in inventory.yaml
   tasks:
     - name: Add Tailscale Helm repository
       kubernetes.core.helm_repository:

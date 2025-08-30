@@ -1,0 +1,127 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: orbb-li-realm
+  namespace: iam
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: orbb.li
+    enabled: true
+    displayName: "Orbb.li Realm"
+    sslRequired: external
+    registrationAllowed: true  # Allow new users from Google
+    loginWithEmailAllowed: true
+    duplicateEmailsAllowed: false
+    resetPasswordAllowed: true
+    editUsernameAllowed: false
+    bruteForceProtected: true
+    permanentLockout: false
+    maxFailureWaitSeconds: 900
+    minimumQuickLoginWaitSeconds: 60
+    waitIncrementSeconds: 60
+    quickLoginCheckMilliSeconds: 1000
+    maxDeltaTimeSeconds: 43200
+    failureFactor: 30
+    
+    # Default roles for the realm
+    roles:
+      realm:
+      - name: admin
+        description: Administrator role
+      - name: user
+        description: Regular user role
+    
+    # Default roles assigned to new users
+    defaultRoles:
+    - user
+    
+    # Default client scopes
+    defaultDefaultClientScopes:
+    - profile
+    - email
+    - roles
+    - web-origins
+    
+    # Predefined admin user
+    users:
+    - username: "orb.li"
+      email: "mail@orbb.li"
+      emailVerified: true
+      enabled: true
+      firstName: "Orb"
+      lastName: "Li"
+      realmRoles:
+      - admin
+      - user
+      clientRoles:
+        realm-management:
+        - realm-admin
+        - manage-realm
+        - manage-users
+        - manage-clients
+        - manage-authorization
+        - manage-events
+        - manage-identity-providers
+        - view-realm
+        - view-users
+        - view-clients
+        - view-authorization
+        - view-events
+        - view-identity-providers
+        account:
+        - manage-account
+        - manage-account-links
+        - view-profile
+      federatedIdentities:
+      - identityProvider: google
+        userId: "{{ google_mailorbbli_userid }}"
+        userName: "mail@orbb.li"
+    
+    # Google OAuth Identity Provider
+    identityProviders:
+    - alias: google
+      providerId: google
+      enabled: true
+      trustEmail: true
+      storeToken: true  # Store token for better integration
+      addReadTokenRoleOnCreate: false
+      authenticateByDefault: false
+      linkOnly: false
+      firstBrokerLoginFlowAlias: first broker login
+      config:
+        clientId: "{{ google_client_id }}"
+        clientSecret: "{{ google_client_secret }}"
+        defaultScope: "openid email profile"
+        # hostedDomain removed - allows any Google account
+        useJwksUrl: "true"
+        hideOnLoginPage: "false"
+        syncMode: "IMPORT"  # Import user data from Google
+    
+    # Browser flow settings
+    browserFlow: browser
+    registrationFlow: registration
+    directGrantFlow: direct grant
+    resetCredentialsFlow: reset credentials
+    clientAuthenticationFlow: clients
+    dockerAuthenticationFlow: docker auth
+    
+    # Realm attributes
+    attributes:
+      frontendUrl: "https://keycloak-lab.orbb.li"
+    
+    # Events configuration
+    eventsEnabled: true
+    eventsListeners:
+    - jboss-logging
+    enabledEventTypes:
+    - LOGIN
+    - LOGIN_ERROR
+    - LOGOUT
+    - LOGOUT_ERROR
+    - REGISTER
+    - REGISTER_ERROR
+    - CODE_TO_TOKEN
+    - CODE_TO_TOKEN_ERROR
+    adminEventsEnabled: true
+    adminEventsDetailsEnabled: true

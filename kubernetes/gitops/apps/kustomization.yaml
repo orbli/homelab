@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: gitops
+
+resources:
+# ArgoCD Self-hosting
+- argocd-self-host-app.yaml    # ArgoCD Core managing itself
+
+# Keycloak Applications (in order of sync wave)
+- keycloak-namespace-app.yaml  # Wave 10: Namespace only
+- keycloak-operator-app.yaml   # Wave 20: Operator and PostgreSQL
+# Note: Secrets managed by Ansible, not GitOps
+# Note: Realms managed by Ansible, not GitOps
+
+# Cloudflared Applications (in order of sync wave)
+- cloudflared-namespace-app.yaml     # Wave 30: Namespace only
+- cloudflared-deployment-app.yaml    # Wave 40: Deployment and ConfigMap
+# Note: Tunnel credentials managed by Ansible between namespace and deployment
+
+# Observability Stack Applications (in order of sync wave)
+- observability-namespace-app.yaml   # Wave -30: Namespace first
+# - prometheus-app.yaml                # Wave 10: Prometheus operator and CRDs
+# - loki-app.yaml                      # Wave 20: Loki for log aggregation
+# - otel-collector-app.yaml            # Wave 30: OpenTelemetry Collector

@@ -1,0 +1,90 @@
+---
+- name: Clean up Observability Stack
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    namespace: observability
+    
+  tasks:
+    - name: Delete ArgoCD Applications
+      kubernetes.core.k8s:
+        state: absent
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ item }}"
+        namespace: gitops
+      with_items:
+        - loki
+        - prometheus
+        - observability-namespace
+      ignore_errors: true
+
+    - name: Wait for applications to be deleted
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ item }}"
+        namespace: gitops
+      register: app_check
+      until: app_check.resources | length == 0
+      retries: 30
+      delay: 5
+      with_items:
+        - loki
+        - prometheus
+        - observability-namespace
+      ignore_errors: true
+
+    - name: Delete PVCs in observability namespace
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: PersistentVolumeClaim
+        namespace: "{{ namespace }}"
+        name: "{{ item }}"
+      with_items:
+        - prometheus-prometheus-kube-prometheus-prometheus-db-prometheus-prometheus-kube-prometheus-prometheus-0
+        - storage-prometheus-kube-prometheus-alertmanager-0
+        - storage-loki-0
+        - data-loki-0
+      ignore_errors: true
+
+    - name: Delete namespace
+      kubernetes.core.k8s:
+        name: "{{ namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: absent
+        wait: true
+        wait_condition:
+          type: Delete
+        wait_timeout: 300
+
+    - name: Force delete namespace if stuck
+      shell: |
+        kubectl get namespace {{ namespace }} -o json | \
+        jq '.spec = {"finalizers":[]}' | \
+        kubectl replace --raw "/api/v1/namespaces/{{ namespace }}/finalize" -f -
+      ignore_errors: true
+      when: false  # Enable this if namespace is stuck
+
+    - name: Verify namespace deletion
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: namespace_check
+      failed_when: namespace_check.resources | length > 0
+      ignore_errors: true
+
+    - name: Display cleanup status
+      debug:
+        msg: |
+          Observability stack cleanup completed!
+          
+          To verify complete removal:
+          kubectl get ns {{ namespace }}
+          kubectl get pvc --all-namespaces | grep {{ namespace }}
+          argocd app list --grpc-web | grep -E 'prometheus|loki|observability'

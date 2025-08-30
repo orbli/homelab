@@ -1,0 +1,191 @@
+---
+- name: Deploy Prometheus and Grafana Stack (kube-prometheus-stack)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    namespace: observability
+    release_name: prometheus
+    chart_version: "69.2.0"
+    
+    # Storage configuration
+    storage_class: k8s-csi
+    prometheus_storage_size: 100Gi
+    prometheus_retention: 30d
+    prometheus_retention_size: 50GB
+    alertmanager_storage_size: 10Gi
+    grafana_storage_size: 10Gi
+    
+    # Resource configuration
+    prometheus_memory_request: 2Gi
+    prometheus_cpu_request: 500m
+    prometheus_memory_limit: 4Gi
+    prometheus_cpu_limit: 2
+    
+    # AlertManager
+    alertmanager_enabled: true
+    
+    # Grafana configuration
+    grafana_domain: grafana-lab.orbb.li
+    grafana_default_role: Viewer
+    grafana_log_level: info
+    grafana_plugins: grafana-piechart-panel,grafana-worldmap-panel
+    
+    # OAuth configuration
+    oauth_provider_name: Keycloak
+    oauth_client_id: grafana
+    oauth_secret_name: grafana-oauth-client
+    oauth_auto_login: true
+    oauth_scopes: openid profile email roles
+    
+    # Keycloak URLs
+    keycloak_base_url: https://keycloak-lab.orbb.li
+    keycloak_realm: orbb.li
+    keycloak_auth_url: "{{ keycloak_base_url }}/realms/{{ keycloak_realm }}/protocol/openid-connect/auth?kc_idp_hint=google"
+    keycloak_token_url: "{{ keycloak_base_url }}/realms/{{ keycloak_realm }}/protocol/openid-connect/token"
+    keycloak_api_url: "{{ keycloak_base_url }}/realms/{{ keycloak_realm }}/protocol/openid-connect/userinfo"
+    keycloak_logout_url: "{{ keycloak_base_url }}/realms/{{ keycloak_realm }}/protocol/openid-connect/logout?post_logout_redirect_uri=https://{{ grafana_domain }}"
+    
+    # Cluster configuration
+    cluster_domain: home-hk1-cluster.orbb.li
+    loki_service: loki
+    
+  tasks:
+    - name: Verify namespace exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: namespace_check
+      failed_when: namespace_check.resources | length == 0
+    
+    - name: Check if OAuth secret exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ oauth_secret_name }}"
+        namespace: "{{ namespace }}"
+      register: oauth_secret
+      failed_when: 
+        - oauth_secret.resources | length == 0
+        - "'Run 06-config-grafana-oauth.yaml first' not in oauth_secret.msg"
+    
+    - name: Fail if OAuth not configured
+      fail:
+        msg: |
+          OAuth client secret not found!
+          Please run the OAuth configuration first:
+          ansible-playbook ansible/02-install/06-config-grafana-oauth.yaml
+      when: oauth_secret.resources | length == 0
+    
+    - name: Extract OAuth client secret
+      set_fact:
+        oauth_client_secret: "{{ oauth_secret.resources[0].data['client-secret'] | b64decode }}"
+      no_log: true
+    
+    - name: Generate kube-prometheus-stack values from template
+      template:
+        src: files/helm-values/prometheus-stack-values.yaml.j2
+        dest: /tmp/prometheus-stack-values.yaml
+        mode: '0644'
+    
+    - name: Add Prometheus Community Helm repository
+      shell: |
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo update
+      register: helm_repo
+      changed_when: "'has been added' in helm_repo.stdout"
+    
+    - name: Deploy kube-prometheus-stack using Helm
+      shell: |
+        helm upgrade --install {{ release_name }} prometheus-community/kube-prometheus-stack \
+          --namespace {{ namespace }} \
+          --values /tmp/prometheus-stack-values.yaml \
+          --version {{ chart_version }} \
+          --wait --timeout 15m
+      register: prometheus_deploy
+      changed_when: "'DEPLOYED' in prometheus_deploy.stdout or 'UPGRADED' in prometheus_deploy.stdout"
+    
+    - name: Wait for Prometheus to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: StatefulSet
+        name: prometheus-{{ release_name }}-kube-prometheus-prometheus
+        namespace: "{{ namespace }}"
+      register: prometheus_sts
+      until:
+        - prometheus_sts.resources | length > 0
+        - prometheus_sts.resources[0].status.readyReplicas | default(0) > 0
+      retries: 60
+      delay: 10
+    
+    - name: Wait for Grafana to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ release_name }}-grafana"
+        namespace: "{{ namespace }}"
+      register: grafana_deployment
+      until:
+        - grafana_deployment.resources | length > 0
+        - grafana_deployment.resources[0].status.readyReplicas | default(0) > 0
+      retries: 60
+      delay: 10
+    
+    - name: Get Grafana service info
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: "{{ release_name }}-grafana"
+        namespace: "{{ namespace }}"
+      register: grafana_svc
+    
+    - name: Display deployment information
+      debug:
+        msg: |
+          Prometheus & Grafana Stack deployed successfully!
+          ================================================
+          
+          Grafana:
+          - External URL: https://{{ grafana_domain }}
+          - Internal URL: http://{{ release_name }}-grafana.{{ namespace }}.svc.{{ cluster_domain }}
+          - OAuth: Configured with Keycloak
+          - Login: Use your Google account via Keycloak SSO
+          
+          Prometheus:
+          - URL: http://{{ release_name }}-kube-prometheus-prometheus.{{ namespace }}.svc.{{ cluster_domain }}:9090
+          - Storage: {{ prometheus_storage_size }} persistent volume
+          - Retention: {{ prometheus_retention }}
+          
+          AlertManager:
+          - URL: http://{{ release_name }}-kube-prometheus-alertmanager.{{ namespace }}.svc.{{ cluster_domain }}:9093
+          - Storage: {{ alertmanager_storage_size }} persistent volume
+          
+          Datasources Configured:
+          - Prometheus (default)
+          - Loki (for logs)
+          - AlertManager
+          
+          Metrics Being Collected:
+          - Node metrics (CPU, memory, disk, network)
+          - Kubernetes metrics (pods, deployments, services)
+          - Container metrics (resource usage)
+          
+          Access Grafana:
+          1. Navigate to https://{{ grafana_domain }}
+          2. Click "Sign in with Keycloak"
+          3. Authenticate with Google
+          4. You'll be logged in with appropriate permissions
+          
+          Default Dashboards Available:
+          - Kubernetes cluster monitoring
+          - Node exporter full
+          - Pod/container metrics
+          - And many more...
+    
+    - name: Clean up temporary files
+      file:
+        path: /tmp/prometheus-stack-values.yaml
+        state: absent
+      tags: cleanup

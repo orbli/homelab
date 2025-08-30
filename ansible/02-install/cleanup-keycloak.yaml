@@ -1,0 +1,84 @@
+---
+# Cleanup script for Keycloak - ensures complete removal including PVCs
+- name: Cleanup Keycloak Completely
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    namespace: iam
+    gitops_namespace: gitops
+    
+  tasks:
+    - name: Delete ArgoCD Applications
+      shell: |
+        export ARGOCD_OPTS="--core"
+        argocd app delete keycloak-operator keycloak-namespace --yes 2>/dev/null || true
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Delete all resources in namespace
+      kubernetes.core.k8s:
+        api_version: "{{ item.api }}"
+        kind: "{{ item.kind }}"
+        namespace: "{{ namespace }}"
+        state: absent
+        wait: false
+      loop:
+        - { api: "k8s.keycloak.org/v2alpha1", kind: "Keycloak" }
+        - { api: "k8s.keycloak.org/v2alpha1", kind: "KeycloakRealmImport" }
+        - { api: "apps/v1", kind: "Deployment" }
+        - { api: "apps/v1", kind: "StatefulSet" }
+        - { api: "v1", kind: "Service" }
+        - { api: "v1", kind: "PersistentVolumeClaim" }
+        - { api: "batch/v1", kind: "Job" }
+        - { api: "v1", kind: "Secret" }
+        - { api: "v1", kind: "ConfigMap" }
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Force delete PVC if it exists
+      shell: |
+        kubectl delete pvc --all -n {{ namespace }} --force --grace-period=0 2>/dev/null || true
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Delete namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+        state: absent
+        wait: true
+        wait_condition:
+          type: Terminating
+        wait_timeout: 60
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Force delete namespace if stuck
+      shell: |
+        kubectl delete namespace {{ namespace }} --force --grace-period=0 2>/dev/null || true
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Verify namespace is deleted
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: ns_check
+      delegate_to: localhost
+      failed_when: ns_check.resources | length > 0
+
+    - name: Display cleanup status
+      debug:
+        msg: |
+          Keycloak cleanup completed!
+          - ArgoCD applications deleted
+          - All resources in namespace deleted
+          - PVCs force deleted
+          - Namespace {{ namespace }} removed
+          
+          You can now redeploy Keycloak with:
+            ansible-playbook 03-deploy-keycloak.yaml

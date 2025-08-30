@@ -1,0 +1,110 @@
+---
+# Install ArgoCD Core (headless - no UI/server)
+# Using Kustomization from Git repository for single source of truth
+# Note: Namespace and default AppProject are now managed via Kustomize
+
+- name: Install ArgoCD Core (Headless)
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    namespace: gitops
+    git_repo: https://github.com/orbli/homelab.git
+    git_branch: master
+    kustomize_path: kubernetes/apps/argocd
+    
+  tasks:
+    # Namespace is now created via Kustomize in kubernetes/apps/argocd/namespace.yaml
+    - name: Apply ArgoCD Core using Kustomize from Git
+      shell: |
+        kubectl apply -k "{{ git_repo }}/{{ kustomize_path }}?ref={{ git_branch }}"
+      register: manifest_result
+      changed_when: "'configured' in manifest_result.stdout or 'created' in manifest_result.stdout"
+
+    - name: Wait for ArgoCD controller to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=argocd-application-controller
+      register: controller_pods
+      until: 
+        - controller_pods.resources | length > 0
+        - controller_pods.resources[0].status.phase == "Running"
+      retries: 30
+      delay: 10
+
+    - name: Wait for ArgoCD repo-server to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=argocd-repo-server
+      register: repo_pods
+      until:
+        - repo_pods.resources | length > 0
+        - repo_pods.resources[0].status.phase == "Running"
+      retries: 30
+      delay: 10
+
+    # Ensure CRDs are properly installed (sometimes applications CRD is missed)
+    - name: Verify applications CRD exists
+      shell: |
+        kubectl get crd applications.argoproj.io || \
+        kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/crds/application-crd.yaml
+      register: crd_check
+      changed_when: "'created' in crd_check.stdout"
+    
+    # Default AppProject is now created via Kustomize in kubernetes/apps/argocd/default-project.yaml
+
+    - name: Get running pods
+      shell: kubectl get pods -n {{ namespace }} --no-headers | grep -v Completed | awk '{print $1}'
+      register: running_pods
+
+    - name: Get services
+      shell: kubectl get svc -n {{ namespace }} --no-headers | awk '{print $1}'
+      register: services
+
+    - name: Get ArgoCD version from ConfigMap
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        name: argocd-version
+        namespace: "{{ namespace }}"
+      register: version_cm
+      ignore_errors: yes
+
+    - name: Display installation results
+      debug:
+        msg: |
+          =====================================
+          ArgoCD Core Installation Complete
+          =====================================
+          
+          Namespace: {{ namespace }}
+          Configuration Source: {{ git_repo }}/{{ kustomize_path }}
+          Branch: {{ git_branch }}
+          Version: {{ version_cm.resources[0].data.version | default('Check kustomization.yaml') if version_cm.resources else 'Check kustomization.yaml' }}
+          
+          Running Pods:
+          {{ running_pods.stdout }}
+          
+          Services:
+          {{ services.stdout }}
+          
+          To deploy applications:
+          kubectl apply -f <application.yaml>
+          
+          To check applications:
+          kubectl get applications -n {{ namespace }}
+          
+          To use ArgoCD CLI in core mode:
+          ARGOCD_OPTS="--core" argocd app list
+          
+          Note: This installation uses Kustomize from Git.
+          To update ArgoCD version, edit:
+          {{ git_repo }}/{{ kustomize_path }}/kustomization.yaml
+          =====================================

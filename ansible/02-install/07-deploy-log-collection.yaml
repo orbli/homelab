@@ -1,0 +1,170 @@
+---
+- name: Deploy Log Collection Stack (Loki & Alloy)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    namespace: observability
+    repo_url: "https://github.com/orbli/homelab.git"
+    
+    # Helm release configuration
+    loki_release_name: loki
+    alloy_release_name: alloy
+    loki_chart_version: "6.24.0"
+    alloy_chart_version: "0.10.0"
+    
+    # Storage configuration
+    storage_class: k8s-csi
+    loki_storage_size: 50Gi
+    
+    # Loki configuration
+    prometheus_retention: 30d
+    prometheus_retention_size: 50GB
+    
+    # Cluster configuration
+    cluster_domain: home-hk1-cluster.orbb.li
+    loki_service: loki
+    prometheus_service: prometheus-kube-prometheus-prometheus
+    
+  tasks:
+    - name: Verify namespace exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: namespace_check
+      failed_when: namespace_check.resources | length == 0
+    
+    - name: Check for existing PVCs that might have old data
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: PersistentVolumeClaim
+        namespace: "{{ namespace }}"
+      register: existing_pvcs
+    
+    - name: Warn about existing PVCs
+      debug:
+        msg: |
+          WARNING: Found existing PVCs in namespace {{ namespace }}:
+          {{ existing_pvcs.resources | map(attribute='metadata.name') | list }}
+          These may contain old data. Consider cleaning them if you want a fresh start.
+      when: existing_pvcs.resources | length > 0
+    
+    # Deploy Loki for log storage
+    - name: Generate Loki Helm values from template
+      template:
+        src: files/helm-values/loki-values.yaml.j2
+        dest: /tmp/loki-values.yaml
+        mode: '0644'
+    
+    - name: Add Grafana Helm repository
+      shell: |
+        helm repo add grafana https://grafana.github.io/helm-charts
+        helm repo update
+      register: helm_repo
+      changed_when: "'has been added' in helm_repo.stdout"
+    
+    - name: Deploy Loki using Helm
+      shell: |
+        helm upgrade --install {{ loki_release_name }} grafana/loki \
+          --namespace {{ namespace }} \
+          --values /tmp/loki-values.yaml \
+          --version {{ loki_chart_version }} \
+          --wait --timeout 10m
+      register: loki_deploy
+      changed_when: "'DEPLOYED' in loki_deploy.stdout or 'UPGRADED' in loki_deploy.stdout"
+    
+    - name: Wait for Loki to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ loki_release_name }}"
+        namespace: "{{ namespace }}"
+      register: loki_sts
+      until:
+        - loki_sts.resources | length > 0
+        - loki_sts.resources[0].status.readyReplicas | default(0) > 0
+      retries: 60
+      delay: 5
+    
+    # Deploy Alloy for log collection
+    - name: Generate Alloy Helm values from template
+      template:
+        src: files/helm-values/alloy-simple-values.yaml.j2
+        dest: /tmp/alloy-values.yaml
+        mode: '0644'
+    
+    - name: Deploy Alloy using Helm
+      shell: |
+        helm upgrade --install {{ alloy_release_name }} grafana/alloy \
+          --namespace {{ namespace }} \
+          --values /tmp/alloy-values.yaml \
+          --version {{ alloy_chart_version }} \
+          --wait --timeout 10m
+      register: alloy_deploy
+      changed_when: "'DEPLOYED' in alloy_deploy.stdout or 'UPGRADED' in alloy_deploy.stdout"
+    
+    - name: Wait for Alloy Deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ alloy_release_name }}"
+        namespace: "{{ namespace }}"
+      register: alloy_deployment
+      until:
+        - alloy_deployment.resources | length > 0
+        - alloy_deployment.resources[0].status.readyReplicas | default(0) > 0
+      retries: 60
+      delay: 5
+    
+    - name: Verify Loki is receiving logs
+      shell: |
+        sleep 10  # Give Alloy time to start sending logs
+        curl -s "http://{{ loki_service }}.{{ namespace }}.svc.{{ cluster_domain }}:3100/loki/api/v1/label/namespace/values" | jq '.data'
+      register: loki_namespaces
+      changed_when: false
+    
+    - name: Display deployment information
+      debug:
+        msg: |
+          Log Collection Stack deployed successfully!
+          ============================================
+          
+          Loki (Log Storage):
+          - URL: http://{{ loki_service }}.{{ namespace }}.svc.{{ cluster_domain }}:3100
+          - Storage: {{ loki_storage_size }} persistent volume
+          - Retention: 30 days
+          - Status: {{ 'Ready' if loki_sts.resources[0].status.readyReplicas > 0 else 'Not Ready' }}
+          
+          Alloy (Log Collector):
+          - Type: Deployment (using Kubernetes API)
+          - Collecting logs from all pods via Kubernetes API
+          - Forwarding to: Loki
+          - Status: {{ 'Ready' if alloy_deployment.resources[0].status.readyReplicas > 0 else 'Not Ready' }}
+          
+          Namespaces being logged:
+          {{ loki_namespaces.stdout | from_json | json_query('data') | to_nice_yaml }}
+          
+          Verification Commands:
+          # Check Loki health
+          curl http://{{ loki_service }}.{{ namespace }}.svc.{{ cluster_domain }}:3100/ready
+          
+          # Query recent logs
+          curl -G "http://{{ loki_service }}.{{ namespace }}.svc.{{ cluster_domain }}:3100/loki/api/v1/query_range" \
+            --data-urlencode 'query={namespace="observability"}' \
+            --data-urlencode 'limit=5'
+          
+          Next Steps:
+          1. Deploy Prometheus + Grafana stack (with OAuth) for visualization
+          2. Configure log retention policies as needed
+          3. Set up alerting rules for log patterns
+    
+    - name: Clean up temporary files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/loki-values.yaml
+        - /tmp/alloy-values.yaml
+      tags: cleanup

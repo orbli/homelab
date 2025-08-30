@@ -1,0 +1,56 @@
+---
+- name: Deploy K8s Monitoring via Helm
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  tasks:
+    # Add Grafana Helm repository
+    - name: Add Grafana Helm repository
+      kubernetes.core.helm_repository:
+        name: grafana
+        repo_url: https://grafana.github.io/helm-charts
+        state: present
+
+    # Ensure observability namespace exists first
+    - name: Ensure observability namespace exists
+      kubernetes.core.k8s:
+        name: observability
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Install k8s-monitoring using Helm chart
+      kubernetes.core.helm:
+        name: k8s-monitoring
+        chart_ref: grafana/k8s-monitoring
+        chart_version: "3.1.0"
+        release_namespace: observability
+        create_namespace: false
+        state: present
+        timeout: 10m0s
+        wait: true
+        values_files:
+          - "{{ playbook_dir }}/monitoring-values/k8s-monitoring-values.yml"
+
+    - name: Display k8s-monitoring deployment information
+      debug:
+        msg: |
+          K8s Monitoring Helm deployment completed!
+          
+          Check Helm release status:
+          helm list -n observability
+          
+          Check release details:
+          helm status k8s-monitoring -n observability
+          
+          Check deployed resources:
+          kubectl get all -n observability
+          
+          Check Alloy logs collector pods:
+          kubectl get pods -n observability -l app.kubernetes.io/name=alloy
+          
+          Check Alloy logs:
+          kubectl logs -n observability -l app.kubernetes.io/name=alloy -c alloy
+          
+          The monitoring stack has been deployed directly via Helm! 

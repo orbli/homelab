@@ -1,0 +1,190 @@
+# Grafana Helm Chart Values with Keycloak OAuth Integration
+grafana:
+  # Admin configuration - disabled since we use OAuth
+  adminUser: ""
+  adminPassword: ""
+  
+  # Persistence
+  persistence:
+    enabled: true
+    storageClassName: k8s-csi
+    size: 10Gi
+  
+  # Resources
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+  
+  # Data sources configuration
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-kube-prometheus-prometheus.observability.svc.home-hk1-cluster.orbb.li:9090
+          access: proxy
+          isDefault: true
+          jsonData:
+            timeInterval: "30s"
+        - name: Loki
+          type: loki
+          url: http://loki.observability.svc.home-hk1-cluster.orbb.li:3100
+          access: proxy
+          jsonData:
+            maxLines: 1000
+        - name: AlertManager
+          type: alertmanager
+          url: http://prometheus-kube-prometheus-alertmanager.observability.svc.home-hk1-cluster.orbb.li:9093
+          access: proxy
+  
+  # Grafana.ini configuration
+  grafana.ini:
+    server:
+      domain: grafana-lab.orbb.li
+      root_url: "https://grafana-lab.orbb.li"
+      router_logging: true
+      enable_gzip: true
+    
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+    
+    security:
+      # Disable initial admin creation since we use OAuth
+      disable_initial_admin_creation: true
+      # Allow embedding
+      allow_embedding: true
+      cookie_secure: true
+      cookie_samesite: lax
+    
+    users:
+      allow_sign_up: false
+      allow_org_create: false
+      auto_assign_org: true
+      auto_assign_org_id: 1
+      auto_assign_org_role: Viewer
+      default_theme: dark
+    
+    auth:
+      disable_login_form: false
+      disable_signout_menu: false
+      oauth_auto_login: true
+    
+    auth.basic:
+      enabled: false
+    
+    auth.generic_oauth:
+      enabled: true
+      name: Keycloak
+      icon: signin
+      allow_sign_up: true
+      auto_login: false
+      client_id: grafana
+      # Client secret will be loaded from mounted secret file
+      client_secret: $__file{/etc/secrets/oauth/client-secret}
+      scopes: openid profile email roles offline_access
+      empty_scopes: false
+      # Keycloak endpoints with Google IDP hint
+      auth_url: https://keycloak.orbb.li/realms/orbb.li/protocol/openid-connect/auth?kc_idp_hint=google
+      token_url: https://keycloak.orbb.li/realms/orbb.li/protocol/openid-connect/token
+      api_url: https://keycloak.orbb.li/realms/orbb.li/protocol/openid-connect/userinfo
+      # Logout configuration
+      signout_redirect_url: https://keycloak.orbb.li/realms/orbb.li/protocol/openid-connect/logout?post_logout_redirect_uri=https://grafana-lab.orbb.li
+      # Attribute mapping
+      email_attribute_path: email
+      name_attribute_path: full_name
+      login_attribute_path: username
+      # Role mapping - using JMESPath to map Keycloak roles to Grafana roles
+      role_attribute_path: |
+        contains(resource_access.grafana.roles[*], 'GrafanaAdmin') && 'GrafanaAdmin' || 
+        contains(resource_access.grafana.roles[*], 'Admin') && 'Admin' || 
+        contains(resource_access.grafana.roles[*], 'Editor') && 'Editor' || 
+        'Viewer'
+      role_attribute_strict: true
+      allow_assign_grafana_admin: true
+      # Additional settings
+      skip_org_role_sync: false
+      tls_skip_verify_insecure: false
+      use_pkce: true
+    
+    log:
+      mode: console
+      level: info
+    
+    log.console:
+      format: json
+  
+  # Mount the OAuth secret
+  extraSecretMounts:
+    - name: grafana-oauth-secret
+      mountPath: /etc/secrets/oauth
+      secretName: grafana-oauth-client
+      readOnly: true
+  
+  # Environment variables
+  env:
+    GF_INSTALL_PLUGINS: grafana-piechart-panel
+  
+  # Sidecar configuration for loading dashboards
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      folder: /tmp/dashboards
+      provider:
+        name: sidecarProvider
+        orgid: 1
+        folder: ''
+        type: file
+        disableDelete: false
+        allowUiUpdates: true
+      searchNamespace: ALL
+    datasources:
+      enabled: false  # We define datasources above
+  
+  # Service Monitor for Prometheus to scrape Grafana metrics
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+  
+  # Readiness and liveness probes
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: 3000
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 3000
+    initialDelaySeconds: 60
+    timeoutSeconds: 30
+    failureThreshold: 10
+  
+  # Network policy
+  networkPolicy:
+    enabled: false
+  
+  # RBAC configuration
+  rbac:
+    create: true
+    pspEnabled: false
+  
+  # Service account
+  serviceAccount:
+    create: true
+    name: grafana
+  
+  # Test framework
+  testFramework:
+    enabled: false

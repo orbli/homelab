@@ -1,0 +1,62 @@
+# IMPORTANT: To update ArgoCD version, you must change it in TWO places:
+# 1. The version literal in configMapGenerator (for reference/documentation)
+# 2. The version in the resources URL below
+# This is a Kustomize limitation - variables cannot be used in resource URLs
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: gitops
+
+# ArgoCD Core version configuration (for reference only)
+configMapGenerator:
+- name: argocd-version
+  literals:
+  - version=v3.1.0  # UPDATE 1: Change version here
+
+# Reference to the official ArgoCD Core manifest
+resources:
+- namespace.yaml  # Create namespace first
+- https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/core-install.yaml  # UPDATE 2: Change version here too
+- default-project.yaml  # Create default AppProject
+- argocd-self-management-rbac.yaml  # Grant cluster-admin for self-management
+
+# Optional: Resource adjustments for Raspberry Pi
+# Using strategic merge patches for better compatibility
+patches:
+- patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: argocd-repo-server
+    spec:
+      template:
+        spec:
+          containers:
+          - name: argocd-repo-server
+            resources:
+              limits:
+                memory: 1Gi
+              requests:
+                memory: 512Mi
+  target:
+    kind: Deployment
+    name: argocd-repo-server
+- patch: |-
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      name: argocd-application-controller
+    spec:
+      template:
+        spec:
+          containers:
+          - name: argocd-application-controller
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                memory: 256Mi
+  target:
+    kind: StatefulSet
+    name: argocd-application-controller

@@ -1,0 +1,239 @@
+# Grafana Alloy Helm Chart Values
+# Generated for {{ namespace }} namespace
+
+# Deployment mode - DaemonSet for log collection from all nodes
+deploymentMode: daemonset
+
+# Alloy configuration
+alloy:
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Security context for container
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    allowPrivilegeEscalation: true
+    capabilities:
+      drop:
+        - ALL
+      add: []  # No special capabilities needed for log collection
+  
+  # Pod security context
+  podSecurityContext:
+    fsGroup: 0
+    runAsUser: 0
+    runAsNonRoot: false
+  
+  # Volume mounts for accessing container logs
+  mounts:
+    dockercontainers: true
+    varlog: true
+  
+  # Configuration file
+  configMap:
+    create: true
+    content: |
+      // Kubernetes discovery for pods
+      discovery.kubernetes "pods" {
+        role = "pod"
+        
+        selectors {
+          role = "pod"
+        }
+      }
+      
+      // Relabel pods to add metadata
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label  = "node"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          target_label  = "app"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app_name"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_instance"]
+          target_label  = "app_instance"
+        }
+        
+        rule {
+          regex = "__meta_kubernetes_pod_label_(.+)"
+          action = "labelmap"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_name"]
+          separator     = "/"
+          target_label  = "job"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "__path__"
+          replacement   = "/var/log/pods/*$1/*.log"
+        }
+      }
+      
+      // Tail logs from discovered pods
+      loki.source.kubernetes_logs "pod_logs" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.process.pod_logs.receiver]
+      }
+      
+      // Process logs to add more labels and parse JSON if present
+      loki.process "pod_logs" {
+        forward_to = [loki.write.loki.receiver]
+        
+        stage.json {
+          expressions = {
+            output  = "",
+            stream  = "stream",
+            time    = "time",
+            log     = "log",
+          }
+        }
+        
+        stage.labels {
+          values = {
+            stream = "",
+          }
+        }
+        
+        stage.output {
+          source = "log"
+        }
+      }
+      
+      // Write logs to Loki
+      loki.write "loki" {
+        endpoint {
+          url = "http://{{ loki_service }}.{{ namespace }}.svc.{{ cluster_domain }}:3100/loki/api/v1/push"
+          
+          // Batch configuration
+          batch_size = 1048576  // 1MB
+          batch_wait = "1s"
+          
+          // Retry configuration
+          min_backoff = "1s"
+          max_backoff = "30s"
+          max_retries = 10
+          
+          // Timeout
+          timeout = "10s"
+        }
+        
+        // WAL configuration for reliability
+        wal {
+          enabled = true
+          max_segment_age = "1h"
+        }
+      }
+      
+      // Optional: Prometheus metrics scraping for Alloy itself
+      prometheus.exporter.self "alloy" {}
+      
+      prometheus.scrape "alloy" {
+        targets    = prometheus.exporter.self.alloy.targets
+        forward_to = [prometheus.remote_write.prometheus.receiver]
+      }
+      
+      prometheus.remote_write "prometheus" {
+        endpoint {
+          url = "http://{{ prometheus_service }}.{{ namespace }}.svc.{{ cluster_domain }}:9090/api/v1/write"
+          
+          // Optional: Add if Prometheus requires authentication
+          // basic_auth {
+          //   username = "..."
+          //   password = "..."
+          // }
+        }
+      }
+
+# Service configuration
+service:
+  enabled: true
+  type: ClusterIP
+
+# Service account
+serviceAccount:
+  create: true
+  name: alloy
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Controller configuration (DaemonSet specific)
+controller:
+  type: daemonset
+  
+  # Update strategy
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  
+  # Host network and PID for better log access
+  hostNetwork: false
+  hostPID: true
+  
+  # DNS policy
+  dnsPolicy: ClusterFirst
+  
+  # Extra volumes (systemd journal)
+  volumes:
+    extra:
+      - name: systemd-journal
+        hostPath:
+          path: /var/log/journal
+          type: Directory
+
+# Monitoring
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    labels:
+      release: prometheus
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "12345"
+
+# Ingress - not needed with Tailscale
+ingress:
+  enabled: false

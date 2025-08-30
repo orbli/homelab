@@ -1,0 +1,59 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: iam
+
+# Force namespace for all resources
+commonLabels:
+  app.kubernetes.io/managed-by: argocd
+  app.kubernetes.io/part-of: keycloak
+
+# Patches to fix namespace in operator resources
+patches:
+- target:
+    kind: ServiceAccount
+    name: keycloak-operator
+  patch: |
+    - op: replace
+      path: /metadata/namespace
+      value: iam
+- target:
+    kind: ClusterRoleBinding
+    name: keycloak-operator
+  patch: |
+    - op: replace
+      path: /subjects/0/namespace
+      value: iam
+- target:
+    kind: RoleBinding
+    name: keycloak-operator
+  patch: |
+    - op: replace
+      path: /metadata/namespace
+      value: iam
+- target:
+    kind: Role
+    name: keycloak-operator
+  patch: |
+    - op: replace
+      path: /metadata/namespace
+      value: iam
+- target:
+    kind: Deployment
+    name: keycloak-operator
+  patch: |
+    - op: replace
+      path: /metadata/namespace
+      value: iam
+
+resources:
+# Keycloak Operator CRDs and deployment from upstream
+- https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.3.3/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
+- https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.3.3/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
+- https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.3.3/kubernetes/kubernetes.yml
+
+# PostgreSQL deployment
+- postgres-deployment.yaml
+
+# Keycloak CR
+- keycloak-cr.yaml

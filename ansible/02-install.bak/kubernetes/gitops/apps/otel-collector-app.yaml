@@ -1,0 +1,171 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector
+  namespace: gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+spec:
+  project: default
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    targetRevision: 0.108.0
+    chart: opentelemetry-collector
+    helm:
+      releaseName: otel-collector
+      values: |
+        mode: deployment
+        replicaCount: 2
+        
+        image:
+          repository: otel/opentelemetry-collector-contrib
+          tag: 0.112.0
+        
+        resources:
+          limits:
+            cpu: 1
+            memory: 2Gi
+          requests:
+            cpu: 200m
+            memory: 400Mi
+        
+        config:
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+            
+            prometheus:
+              config:
+                scrape_configs:
+                  - job_name: 'otel-collector'
+                    scrape_interval: 10s
+                    static_configs:
+                      - targets: ['127.0.0.1:8888']
+          
+          processors:
+            memory_limiter:
+              check_interval: 1s
+              limit_percentage: 75
+              spike_limit_percentage: 15
+            
+            batch:
+              timeout: 10s
+              send_batch_size: 1024
+            
+            resource:
+              attributes:
+                - key: cluster.name
+                  value: "home-hk1-cluster"
+                  action: upsert
+                - key: deployment.environment
+                  value: "homelab"
+                  action: upsert
+            
+            k8sattributes:
+              auth_type: "serviceAccount"
+              extract:
+                metadata:
+                  - k8s.namespace.name
+                  - k8s.pod.name
+                  - k8s.deployment.name
+                labels:
+                  - tag_name: app
+                    key: app
+            
+            transform:
+              error_mode: ignore
+              log_statements:
+                - context: log
+                  statements:
+                    - set(severity_text, "INFO") where severity_text == ""
+                    - set(attributes["level"], severity_text)
+                    - set(attributes["job"], "otel-collector") where attributes["job"] == nil
+          
+          exporters:
+            prometheusremotewrite:
+              endpoint: http://prometheus-kube-prometheus-prometheus.observability.svc.home-hk1-cluster.orbb.li:9090/api/v1/write
+              tls:
+                insecure: true
+              retry_on_failure:
+                enabled: true
+            
+            loki:
+              endpoint: http://loki-gateway.observability.svc.home-hk1-cluster.orbb.li/loki/api/v1/push
+              default_labels_enabled:
+                exporter: true
+                level: true
+            
+            debug:
+              verbosity: basic
+              sampling_initial: 5
+              sampling_thereafter: 200
+          
+          extensions:
+            health_check:
+              endpoint: 0.0.0.0:13133
+            pprof:
+              endpoint: 0.0.0.0:1777
+            zpages:
+              endpoint: 0.0.0.0:55679
+          
+          service:
+            extensions: [health_check, pprof, zpages]
+            pipelines:
+              metrics:
+                receivers: [otlp, prometheus]
+                processors: [memory_limiter, batch, resource, k8sattributes]
+                exporters: [prometheusremotewrite, debug]
+              
+              logs:
+                receivers: [otlp]
+                processors: [memory_limiter, batch, resource, k8sattributes, transform]
+                exporters: [loki, debug]
+              
+              traces:
+                receivers: [otlp]
+                processors: [memory_limiter, batch, resource, k8sattributes]
+                exporters: [debug]
+        
+        service:
+          type: ClusterIP
+        
+        ports:
+          otlp:
+            enabled: true
+            containerPort: 4317
+            servicePort: 4317
+            hostPort: 4317
+            protocol: TCP
+          otlp-http:
+            enabled: true
+            containerPort: 4318
+            servicePort: 4318
+            hostPort: 4318
+            protocol: TCP
+          metrics:
+            enabled: true
+            containerPort: 8888
+            servicePort: 8888
+            protocol: TCP
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,274 @@
+---
+# 03 - Keycloak Deployment via ArgoCD
+# This playbook:
+# 1. Deploys ArgoCD Applications (namespace and operator)
+# 2. Creates secrets directly with generated passwords
+# 3. Monitors deployment health
+# 
+# Note: Clean separation of concerns:
+# - ArgoCD manages: namespace, operator, PostgreSQL
+# - Ansible manages: secrets, realm configuration
+
+- name: Deploy Keycloak via ArgoCD
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    namespace: iam
+    gitops_namespace: gitops
+    secrets_file: "../secrets/keycloak-secrets.yaml"
+    argocd_apps_path: "../../kubernetes/gitops/apps"
+    
+  tasks:
+    # Pre-deployment checks
+    - name: Check for existing PVCs in namespace
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: PersistentVolumeClaim
+        namespace: "{{ namespace }}"
+      register: existing_pvcs
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Warn about existing PVCs
+      fail:
+        msg: |
+          WARNING: Found existing PVCs in namespace {{ namespace }}:
+          {{ existing_pvcs.resources | map(attribute='metadata.name') | list }}
+          
+          This will cause authentication failures with new passwords!
+          Please run: ansible-playbook cleanup-keycloak.yaml
+          Then re-run this playbook.
+      when: 
+        - existing_pvcs.resources is defined
+        - existing_pvcs.resources | length > 0
+
+    - name: Check if secrets file exists
+      stat:
+        path: "{{ secrets_file }}"
+      register: secrets_file_stat
+      failed_when: not secrets_file_stat.stat.exists
+      delegate_to: localhost
+
+    - name: Load secrets
+      include_vars: "{{ secrets_file }}"
+      no_log: true
+    
+    - name: Generate PostgreSQL password (always generate fresh)
+      set_fact:
+        postgres_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # Always generate a fresh password for security
+
+    # STAGE 1: Deploy namespace ArgoCD Application only
+    - name: Apply namespace ArgoCD Application
+      shell: |
+        kubectl apply -f {{ argocd_apps_path }}/keycloak-namespace-app.yaml
+      register: namespace_app_result
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Wait for namespace ArgoCD Application to be created
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: keycloak-namespace
+        namespace: "{{ gitops_namespace }}"
+      register: app_check
+      until: app_check.resources | length > 0
+      retries: 10
+      delay: 5
+      delegate_to: localhost
+
+    # STAGE 2: Sync namespace app to create namespace
+    - name: Wait for namespace app to auto-sync or sync it
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: ns_check
+      until: ns_check.resources | length > 0
+      retries: 10
+      delay: 2
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Sync namespace if not auto-synced
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync keycloak-namespace --retry-limit 3
+      when: ns_check.resources | length == 0
+      register: sync_namespace
+      changed_when: true
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Ensure namespace exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: ns_final_check
+      until: ns_final_check.resources | length > 0
+      retries: 10
+      delay: 2
+      delegate_to: localhost
+
+    # STAGE 3: Create secrets BEFORE deploying operator
+    - name: Apply database secrets from template
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ item }}"
+      loop: "{{ lookup('template', 'files/keycloak-database-secrets.yaml.j2') | from_yaml_all }}"
+      delegate_to: localhost
+      no_log: true  # Don't log secret values
+
+    # STAGE 4: Now deploy operator ArgoCD Application
+    - name: Apply operator ArgoCD Application
+      shell: |
+        kubectl apply -f {{ argocd_apps_path }}/keycloak-operator-app.yaml
+      register: operator_app_result
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Wait for operator ArgoCD Application to be created
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: keycloak-operator
+        namespace: "{{ gitops_namespace }}"
+      register: operator_app_check
+      until: operator_app_check.resources | length > 0
+      retries: 10
+      delay: 5
+      delegate_to: localhost
+
+    # STAGE 5: Wait for operator to auto-sync or sync it
+    - name: Wait for operator to auto-sync
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: keycloak-operator
+        namespace: "{{ namespace }}"
+      register: operator_check
+      until: operator_check.resources | length > 0
+      retries: 10
+      delay: 5
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Sync operator if not auto-synced
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync keycloak-operator --retry-limit 3
+      when: operator_check.resources | length == 0
+      register: sync_operator
+      changed_when: true
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Wait for PostgreSQL to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app=postgres-db
+      register: postgres_pods
+      until: |
+        postgres_pods.resources | length > 0 and
+        postgres_pods.resources[0].status.phase == 'Running' and
+        postgres_pods.resources[0].status.conditions is defined and
+        postgres_pods.resources[0].status.conditions | json_query('[?type==`Ready`].status') | first | default(false) == 'True'
+      retries: 24
+      delay: 5
+      delegate_to: localhost
+
+    # STAGE 5: Handle KeycloakRealmImport (managed by Ansible, not GitOps)
+    - name: Wait for Keycloak to be ready before importing realm
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: keycloak-0
+        namespace: "{{ namespace }}"
+      register: keycloak_pod
+      until: |
+        keycloak_pod.resources | length > 0 and
+        keycloak_pod.resources[0].status.phase == 'Running' and
+        keycloak_pod.resources[0].status.conditions is defined and
+        keycloak_pod.resources[0].status.conditions | json_query('[?type==`Ready`].status') | first | default(false) == 'True'
+      retries: 36
+      delay: 5
+      delegate_to: localhost
+
+    - name: Apply realm configuration from template
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('template', 'files/orbb-li-realm.yaml.j2') | from_yaml }}"
+        wait: false  # Don't wait, as import is async
+      delegate_to: localhost
+
+    - name: Wait for realm import to complete
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: Job
+        name: orbb-li-realm
+        namespace: "{{ namespace }}"
+      register: realm_job
+      until: |
+        realm_job.resources | length > 0 and
+        realm_job.resources[0].status.conditions is defined and
+        realm_job.resources[0].status.conditions | json_query('[?type==`Complete`].status') | first | default(false) == 'True'
+      retries: 24
+      delay: 5
+      delegate_to: localhost
+
+    # STAGE 6: Monitor deployment status
+    - name: Wait for keycloak-operator to be healthy
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait keycloak-operator --health --timeout 300
+      register: operator_health
+      retries: 3
+      delay: 10
+      until: operator_health.rc == 0
+      delegate_to: localhost
+
+    # Note: keycloak-instance app removed as realms are managed by Ansible
+    # The operator health check above ensures Keycloak itself is running
+
+    - name: Retrieve generated admin password
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: keycloak-initial-admin
+        namespace: "{{ namespace }}"
+      register: admin_secret
+      delegate_to: localhost
+
+    - name: Decode admin password
+      set_fact:
+        admin_password: "{{ admin_secret.resources[0].data.password | b64decode }}"
+      when: admin_secret.resources | length > 0
+
+    - name: Display deployment status
+      debug:
+        msg: |
+          Keycloak deployment completed!
+          
+          GitOps-managed (ArgoCD):
+          - keycloak-namespace (namespace only)
+          - keycloak-operator (operator and PostgreSQL)
+          
+          Ansible-managed:
+          - Secret values (created directly, no placeholders)
+          - KeycloakRealmImport (realm configuration with OAuth credentials)
+          
+          Access Keycloak at: https://keycloak-lab.orbb.li
+          
+          Auto-generated credentials:
+          - Admin username: temp-admin
+          - Admin password: {{ admin_password | default('Check keycloak-initial-admin secret') }}
+          - PostgreSQL password: [auto-generated and stored in cluster]
+          
+          Monitor with:
+            ARGOCD_OPTS="--core" argocd app list
+            kubectl get all -n {{ namespace }}
+      delegate_to: localhost

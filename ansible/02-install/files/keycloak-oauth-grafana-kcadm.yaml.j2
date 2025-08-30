@@ -1,0 +1,160 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ app_name }}-keycloak-grafana-config
+  namespace: {{ namespace }}
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: keycloak-grafana-configurator
+        image: quay.io/keycloak/keycloak:25.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          
+          echo "Configuring Grafana-specific OAuth settings..."
+          
+          KEYCLOAK_URL="http://keycloak-service.{{ keycloak_namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:8080"
+          
+          # Authenticate with Keycloak
+          echo "Authenticating with Keycloak..."
+          /opt/keycloak/bin/kcadm.sh config credentials \
+            --server "$KEYCLOAK_URL" \
+            --realm master \
+            --user "${KEYCLOAK_ADMIN}" \
+            --password "${KEYCLOAK_ADMIN_PASSWORD}"
+          
+          # Get the client ID
+          echo "Getting {{ oauth_client_id | default(app_name) }} client ID..."
+          CLIENT_ID=$(/opt/keycloak/bin/kcadm.sh get clients \
+            -r {{ keycloak_realm }} \
+            --fields id,clientId \
+            --format csv \
+            --noquotes 2>/dev/null | grep "^.*,{{ oauth_client_id | default(app_name) }}$" | cut -d',' -f1)
+          
+          if [ -z "$CLIENT_ID" ]; then
+            echo "Client {{ oauth_client_id | default(app_name) }} not found. Please ensure OAuth client creation job has run first."
+            exit 1
+          fi
+          
+          echo "Found client with ID: $CLIENT_ID"
+          
+          # Create Grafana-specific client roles
+          {% if grafana_admin_users is defined %}
+          echo "Creating Grafana client roles..."
+          for ROLE in Admin Editor Viewer; do
+            /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/roles \
+              -r {{ keycloak_realm }} \
+              -s name=$ROLE \
+              -s description="Grafana $ROLE role" 2>/dev/null || echo "Role $ROLE already exists"
+          done
+          
+          # Assign admin users to Admin role
+          {% for admin_email in grafana_admin_users %}
+          echo "Assigning Admin role to {{ admin_email }}..."
+          USER_ID=$(/opt/keycloak/bin/kcadm.sh get users \
+            -r {{ keycloak_realm }} \
+            -q email={{ admin_email }} \
+            --fields id \
+            --format csv \
+            --noquotes | tail -1)
+          
+          if [ -n "$USER_ID" ] && [ "$USER_ID" != "id" ]; then
+            /opt/keycloak/bin/kcadm.sh add-roles \
+              -r {{ keycloak_realm }} \
+              --uid "$USER_ID" \
+              --cclientid {{ oauth_client_id | default(app_name) }} \
+              --rolename Admin 2>/dev/null || echo "Role already assigned"
+            echo "Assigned Admin role to user $USER_ID"
+          else
+            echo "User {{ admin_email }} not found, skipping role assignment"
+          fi
+          {% endfor %}
+          {% endif %}
+          
+          # Configure protocol mappers for role extraction
+          echo "Configuring protocol mappers for Grafana..."
+          
+          # Remove existing client roles mapper if any (to ensure clean state)
+          EXISTING_MAPPER_ID=$(/opt/keycloak/bin/kcadm.sh get clients/$CLIENT_ID/protocol-mappers/models \
+            -r {{ keycloak_realm }} 2>/dev/null | grep -o '"id":"[^"]*","name":"client-roles"' | cut -d'"' -f4 || true)
+          
+          if [ -n "$EXISTING_MAPPER_ID" ]; then
+            echo "Removing existing client-roles mapper..."
+            /opt/keycloak/bin/kcadm.sh delete clients/$CLIENT_ID/protocol-mappers/models/$EXISTING_MAPPER_ID \
+              -r {{ keycloak_realm }} 2>/dev/null || true
+          fi
+          
+          # Create client roles mapper - critical for Grafana role mapping
+          echo "Creating client roles protocol mapper..."
+          /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models \
+            -r {{ keycloak_realm }} \
+            -s name="client-roles" \
+            -s protocol="openid-connect" \
+            -s protocolMapper="oidc-usermodel-client-role-mapper" \
+            -s consentRequired=false \
+            -s 'config."multivalued"=true' \
+            -s 'config."userinfo.token.claim"=true' \
+            -s 'config."id.token.claim"=true' \
+            -s 'config."access.token.claim"=true' \
+            -s 'config."claim.name"=resource_access.${client_id}.roles' \
+            -s 'config."jsonType.label"=String' \
+            -s "config.\"usermodel.clientRoleMapping.clientId\"={{ oauth_client_id | default(app_name) }}"
+          
+          echo "Client roles mapper created successfully"
+          
+          # Ensure basic attribute mappers exist
+          echo "Configuring basic attribute mappers..."
+          
+          # Email mapper
+          /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models \
+            -r {{ keycloak_realm }} \
+            -s name="email" \
+            -s protocol="openid-connect" \
+            -s protocolMapper="oidc-usermodel-property-mapper" \
+            -s consentRequired=false \
+            -s 'config."userinfo.token.claim"=true' \
+            -s 'config."user.attribute"=email' \
+            -s 'config."id.token.claim"=true' \
+            -s 'config."access.token.claim"=true' \
+            -s 'config."claim.name"=email' \
+            -s 'config."jsonType.label"=String' 2>/dev/null || echo "Email mapper already exists"
+          
+          # Username mapper  
+          /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models \
+            -r {{ keycloak_realm }} \
+            -s name="username" \
+            -s protocol="openid-connect" \
+            -s protocolMapper="oidc-usermodel-property-mapper" \
+            -s consentRequired=false \
+            -s 'config."userinfo.token.claim"=true' \
+            -s 'config."user.attribute"=username' \
+            -s 'config."id.token.claim"=true' \
+            -s 'config."access.token.claim"=true' \
+            -s 'config."claim.name"=username' \
+            -s 'config."jsonType.label"=String' 2>/dev/null || echo "Username mapper already exists"
+          
+          # Full name mapper
+          /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models \
+            -r {{ keycloak_realm }} \
+            -s name="full_name" \
+            -s protocol="openid-connect" \
+            -s protocolMapper="oidc-full-name-mapper" \
+            -s consentRequired=false \
+            -s 'config."id.token.claim"=true' \
+            -s 'config."access.token.claim"=true' \
+            -s 'config."userinfo.token.claim"=true' \
+            -s 'config."claim.name"=full_name' 2>/dev/null || echo "Full name mapper already exists"
+          
+          echo "All protocol mappers configured successfully"
+          echo "Grafana-specific configuration completed successfully"
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: "{{ keycloak_admin_username }}"
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          value: "{{ keycloak_admin_password }}"

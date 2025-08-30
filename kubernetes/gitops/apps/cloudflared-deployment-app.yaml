@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudflared-deployment
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: cloudflared-deployment
+    app.kubernetes.io/part-of: ingress
+  annotations:
+    argocd.argoproj.io/sync-wave: "40"  # After namespace and secrets
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/orbli/homelab.git
+    targetRevision: master
+    path: kubernetes/apps/cloudflared/deployment
+    kustomize: {}
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingress
+  
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false  # Don't auto-heal as deployment depends on external secret
+    syncOptions:
+    - CreateNamespace=false  # Namespace should already exist
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

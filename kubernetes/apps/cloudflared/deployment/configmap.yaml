@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared
+  namespace: ingress
+  labels:
+    app.kubernetes.io/name: cloudflared
+    app.kubernetes.io/part-of: ingress
+data:
+  config.yaml: |
+    # Name of the tunnel you want to run
+    tunnel: home-hk1-cluster-tunnel
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    # Serves the metrics server under /metrics and the readiness server under /ready
+    metrics: 0.0.0.0:2000
+    # Autoupdates applied in a k8s pod will be lost when the pod is removed or restarted, so
+    # autoupdate doesn't make sense in Kubernetes. However, outside of Kubernetes, we strongly
+    # recommend using autoupdate.
+    no-autoupdate: true
+    # The `ingress` block tells cloudflared which local service to route incoming
+    # requests to. For more about ingress rules, see
+    # https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configuration/ingress
+    #
+    # Remember, these rules route traffic from cloudflared to a local service. To route traffic
+    # from the internet to cloudflared, run `cloudflared tunnel route dns <tunnel> <hostname>`.
+    # E.g. `cloudflared tunnel route dns example-tunnel tunnel.example.com`.
+    ingress:
+    - hostname: keycloak-lab.orbb.li
+      service: http://keycloak-service.iam.svc.home-hk1-cluster.orbb.li:8080
+      originRequest:
+        noTLSVerify: true
+    - hostname: grafana-lab.orbb.li
+      service: http://prometheus-grafana.observability.svc.home-hk1-cluster.orbb.li
+      originRequest:
+        noTLSVerify: true
+    - service: http_status:404

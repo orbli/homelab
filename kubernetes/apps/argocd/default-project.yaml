@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: default
+    app.kubernetes.io/part-of: argocd
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  # Allow all resource types in all namespaces
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  
+  # Allow deployments to any namespace on any server
+  destinations:
+  - namespace: '*'
+    server: '*'
+  
+  # Allow pulling from any repository
+  sourceRepos:
+  - '*'
+  
+  # Allow all namespaced resources
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'

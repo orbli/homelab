@@ -1,0 +1,36 @@
+# Simplified Alloy configuration for log collection
+alloy:
+  configMap:
+    create: false
+  extraEnv:
+    - name: HOSTNAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+
+controller:
+  type: daemonset
+  volumeMounts:
+    - name: varlog
+      mountPath: /var/log
+      readOnly: true
+  volumes:
+    - name: varlog
+      hostPath:
+        path: /var/log
+
+service:
+  enabled: true
+
+serviceMonitor:
+  enabled: true
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+
+tolerations:
+  - effect: NoSchedule
+    operator: Exists

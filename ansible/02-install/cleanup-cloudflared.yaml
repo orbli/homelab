@@ -1,0 +1,114 @@
+---
+# Cleanup playbook for Cloudflared
+# This removes all Cloudflared resources including namespace
+
+- name: Cleanup Cloudflared deployment
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    namespace: ingress
+    gitops_namespace: gitops
+    
+  tasks:
+    - name: Delete Cloudflared ArgoCD Applications
+      kubernetes.core.k8s:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ item }}"
+        namespace: "{{ gitops_namespace }}"
+        state: absent
+      loop:
+        - cloudflared-deployment
+        - cloudflared-namespace
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Wait for Applications to be deleted
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ item }}"
+        namespace: "{{ gitops_namespace }}"
+      register: app_check
+      until: app_check.resources | length == 0
+      retries: 10
+      delay: 3
+      loop:
+        - cloudflared-deployment
+        - cloudflared-namespace
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Delete all resources in ingress namespace
+      shell: |
+        kubectl delete all --all -n {{ namespace }} --ignore-not-found=true
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Delete tunnel credentials secret
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Secret
+        name: tunnel-credentials
+        namespace: "{{ namespace }}"
+        state: absent
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Delete ingress namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+        state: absent
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Check if namespace is stuck terminating
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: ns_check
+      delegate_to: localhost
+
+    - name: Force delete stuck namespace if needed
+      shell: |
+        kubectl get namespace {{ namespace }} -o json | \
+        jq '.metadata.finalizers = []' | \
+        kubectl replace --raw "/api/v1/namespaces/{{ namespace }}/finalize" -f -
+      when:
+        - ns_check.resources | length > 0
+        - ns_check.resources[0].status.phase == "Terminating"
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Wait for namespace deletion
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: ns_final
+      until: ns_final.resources | length == 0
+      retries: 20
+      delay: 3
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Display cleanup status
+      debug:
+        msg: |
+          Cloudflared cleanup completed!
+          
+          Removed:
+          - ArgoCD Applications: cloudflared-namespace, cloudflared-deployment
+          - Namespace: {{ namespace }}
+          - All resources in namespace
+          - Tunnel credentials secret
+          
+          Verify with:
+            kubectl get namespace {{ namespace }}
+            ARGOCD_OPTS="--core" argocd app list | grep cloudflared
+      delegate_to: localhost

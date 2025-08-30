@@ -1,0 +1,129 @@
+---
+# Enable ArgoCD self-hosting - ArgoCD manages its own deployment from Git
+# This creates a GitOps loop where ArgoCD watches its own configuration
+# Note: The Application manifest is now stored in Git, not hardcoded here
+
+- name: Configure ArgoCD Self-Hosting
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    namespace: gitops
+    git_repo: https://github.com/orbli/homelab.git
+    git_branch: master
+    argocd_apps_path: kubernetes/gitops/apps
+    argocd_resources_path: kubernetes/apps/argocd
+    
+  tasks:
+    - name: Verify ArgoCD is running
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=argocd-application-controller
+      register: controller_check
+      failed_when: 
+        - controller_check.resources | length == 0
+        - controller_check.resources[0].status.phase != "Running"
+
+    - name: Verify ArgoCD CRDs are installed
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: applications.argoproj.io
+      register: crd_check
+      failed_when: crd_check.resources | length == 0
+
+    # Apply self-hosting Application from Git (not hardcoded)
+    - name: Apply self-hosting Application manifest from Git
+      shell: |
+        kubectl apply -f https://raw.githubusercontent.com/orbli/homelab/{{ git_branch }}/{{ argocd_apps_path }}/argocd-self-host-app.yaml
+      register: apply_result
+      changed_when: "'configured' in apply_result.stdout or 'created' in apply_result.stdout"
+
+    - name: Wait for Application to be created
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: argocd-self-host
+        namespace: "{{ namespace }}"
+      register: app_status
+      until: app_status.resources | length > 0
+      retries: 10
+      delay: 5
+
+    - name: Wait for initial sync (give ArgoCD time to process)
+      pause:
+        seconds: 10
+
+    - name: Get Application sync status
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: argocd-self-host
+        namespace: "{{ namespace }}"
+      register: app_info
+
+    - name: Trigger manual sync if needed
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync argocd-self-host --timeout 30 || true
+      when: 
+        - app_info.resources[0].status.sync.status is defined
+        - app_info.resources[0].status.sync.status != "Synced"
+      register: sync_result
+      changed_when: "'Sync operation initiated' in (sync_result.stdout | default(''))"
+
+    - name: Get final Application status
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: argocd-self-host
+        namespace: "{{ namespace }}"
+      register: final_app_info
+
+    - name: Display self-hosting configuration status
+      debug:
+        msg: |
+          =====================================
+          ArgoCD Self-Hosting Configuration Complete
+          =====================================
+          
+          Application: argocd-self-host
+          Namespace: {{ namespace }}
+          
+          Git Configuration:
+          - Repository: {{ git_repo }}
+          - Branch: {{ git_branch }}
+          - Apps Path: {{ argocd_apps_path }}
+          - Resources Path: {{ argocd_resources_path }}
+          
+          Sync Policy:
+          - Automated: Yes (prune & self-heal enabled)
+          - Server-Side Apply: Yes
+          
+          Current Status:
+          - Sync: {{ final_app_info.resources[0].status.sync.status | default('Pending') }}
+          - Health: {{ final_app_info.resources[0].status.health.status | default('Progressing') }}
+          - Revision: {{ final_app_info.resources[0].status.sync.revision | default('N/A') | truncate(7, True, '') }}
+          
+          🎯 What this means:
+          ArgoCD is now watching its own configuration at:
+          {{ git_repo }}/tree/{{ git_branch }}/{{ argocd_resources_path }}
+          
+          Any changes to kustomization.yaml will be automatically
+          applied by ArgoCD to itself!
+          
+          To check self-hosting status:
+          ARGOCD_OPTS="--core" argocd app get argocd-self-host
+          
+          To manually sync if needed:
+          ARGOCD_OPTS="--core" argocd app sync argocd-self-host
+          
+          To update ArgoCD version:
+          1. Edit {{ argocd_resources_path }}/kustomization.yaml in Git
+          2. Update version in both marked locations
+          3. Commit and push
+          4. ArgoCD will automatically update itself!
+          =====================================

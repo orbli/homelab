@@ -1,0 +1,212 @@
+---
+- name: Configure Grafana OAuth with Keycloak
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    namespace: observability
+    keycloak_namespace: iam
+    keycloak_realm: "orbb.li"
+    cluster_domain: "home-hk1-cluster.orbb.li"
+    
+    # Grafana OAuth configuration
+    app_name: grafana
+    app_display_name: "Grafana"
+    app_description: "Grafana Observability Platform"
+    app_root_url: "https://grafana-lab.orbb.li"
+    app_base_url: "/"
+    app_logout_url: "https://grafana-lab.orbb.li/logout"
+    
+    oauth_client_id: grafana
+    oauth_secret_name: grafana-oauth-client
+    oauth_redirect_uris:
+      - "https://grafana-lab.orbb.li/login/generic_oauth"
+    oauth_web_origins:
+      - "https://grafana-lab.orbb.li"
+    oauth_default_scopes:
+      - "email"
+      - "profile"
+      - "roles"
+    
+    # Grafana admin users
+    grafana_admin_users:
+      - "mail@orbb.li"
+    grafana_default_role: "Viewer"
+    
+  tasks:
+    - name: Deploy observability namespace via ArgoCD
+      shell: |
+        kubectl apply -f ../../kubernetes/gitops/apps/observability-namespace-app.yaml
+      register: namespace_app
+      changed_when: "'configured' in namespace_app.stdout or 'created' in namespace_app.stdout"
+    
+    - name: Wait for namespace ArgoCD app to sync
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: observability-namespace
+        namespace: gitops
+      register: namespace_app_status
+      until: 
+        - namespace_app_status.resources | length > 0
+        - namespace_app_status.resources[0].status.sync.status == "Synced"
+      retries: 30
+      delay: 5
+    
+    - name: Verify namespace exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: namespace_check
+      failed_when: namespace_check.resources | length == 0
+    
+    - name: Get Keycloak admin credentials from secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: keycloak-initial-admin
+        namespace: "{{ keycloak_namespace }}"
+      register: keycloak_admin_secret
+      failed_when: keycloak_admin_secret.resources | length == 0
+    
+    - name: Extract Keycloak admin credentials
+      set_fact:
+        keycloak_admin_username: "{{ keycloak_admin_secret.resources[0].data.username | b64decode }}"
+        keycloak_admin_password: "{{ keycloak_admin_secret.resources[0].data.password | b64decode }}"
+      no_log: true
+    
+    - name: Generate OAuth client creation manifest
+      template:
+        src: files/keycloak-oauth-client-create.yaml.j2
+        dest: /tmp/grafana-oauth-client-create.yaml
+        mode: '0644'
+    
+    - name: Apply OAuth client creation job
+      shell: |
+        kubectl apply -f /tmp/grafana-oauth-client-create.yaml
+      register: apply_oauth_job
+      changed_when: "'configured' in apply_oauth_job.stdout or 'created' in apply_oauth_job.stdout"
+    
+    - name: Wait for OAuth client creation job to complete
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: Job
+        name: "{{ app_name }}-keycloak-oauth-create"
+        namespace: "{{ namespace }}"
+      register: oauth_job
+      until: 
+        - oauth_job.resources | length > 0
+        - oauth_job.resources[0].status.completionTime is defined or 
+          (oauth_job.resources[0].status.failed is defined and oauth_job.resources[0].status.failed > 0)
+      retries: 60
+      delay: 5
+    
+    - name: Check if OAuth client creation job succeeded
+      fail:
+        msg: "OAuth client creation job failed. Check logs with: kubectl logs -n {{ namespace }} job/{{ app_name }}-keycloak-oauth-create"
+      when:
+        - oauth_job.resources | length > 0
+        - oauth_job.resources[0].status.failed is defined
+        - oauth_job.resources[0].status.failed > 0
+    
+    - name: Generate Grafana-specific Keycloak configuration manifest
+      template:
+        src: files/keycloak-oauth-grafana-kcadm.yaml.j2
+        dest: /tmp/grafana-keycloak-config.yaml
+        mode: '0644'
+    
+    - name: Apply Grafana-specific Keycloak configuration
+      shell: |
+        kubectl apply -f /tmp/grafana-keycloak-config.yaml
+      register: apply_grafana_config
+      changed_when: "'configured' in apply_grafana_config.stdout or 'created' in apply_grafana_config.stdout"
+    
+    - name: Wait for Grafana configuration job to complete
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: Job
+        name: "{{ app_name }}-keycloak-grafana-config"
+        namespace: "{{ namespace }}"
+      register: grafana_config_job
+      until: 
+        - grafana_config_job.resources | length > 0
+        - grafana_config_job.resources[0].status.completionTime is defined or 
+          (grafana_config_job.resources[0].status.failed is defined and grafana_config_job.resources[0].status.failed > 0)
+      retries: 60
+      delay: 5
+    
+    - name: Check if Grafana configuration job succeeded
+      fail:
+        msg: "Grafana configuration job failed. Check logs with: kubectl logs -n {{ namespace }} job/{{ app_name }}-keycloak-grafana-config"
+      when:
+        - grafana_config_job.resources | length > 0
+        - grafana_config_job.resources[0].status.failed is defined
+        - grafana_config_job.resources[0].status.failed > 0
+    
+    - name: Verify OAuth client secret was created
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: grafana-oauth-client
+        namespace: "{{ namespace }}"
+      register: oauth_secret
+      failed_when: oauth_secret.resources | length == 0
+    
+    - name: Display OAuth setup status
+      debug:
+        msg: |
+          OAuth Client Setup Complete!
+          ============================
+          Client ID: {{ oauth_client_id }}
+          Secret stored in: {{ namespace }}/{{ oauth_secret_name }}
+          Admin users: {{ grafana_admin_users | join(', ') }}
+          
+          The Keycloak OAuth client has been configured with:
+          - Client ID: {{ oauth_client_id }}
+          - Redirect URIs configured for {{ app_root_url }}
+          - Roles: Admin, Editor, Viewer
+          - Admin users assigned Admin role
+    
+    - name: Create Grafana values file
+      copy:
+        dest: /tmp/grafana-values.yaml
+        content: "{{ lookup('template', 'files/grafana-values.yaml.j2') }}"
+    
+    - name: Display next steps
+      debug:
+        msg: |
+          ====================================
+          Grafana OAuth Setup Complete!
+          ====================================
+          
+          The Keycloak OAuth client and secret have been created.
+          
+          Next steps to deploy Grafana:
+          1. Update kube-prometheus-stack values to enable Grafana
+          2. Apply the values from /tmp/grafana-values.yaml
+          3. Or deploy Grafana separately using:
+             helm install grafana grafana/grafana -n {{ namespace }} -f /tmp/grafana-values.yaml
+          
+          OAuth Configuration:
+          - Client: {{ oauth_client_id }}
+          - Secret: Stored in {{ namespace }}/{{ oauth_secret_name }}
+          - Admins: {{ grafana_admin_users | join(', ') }}
+          - Login URL: {{ app_root_url }}
+          - SSO Provider: Keycloak with Google IDP hint
+          
+          To verify the OAuth client in Keycloak:
+          1. Go to https://keycloak.orbb.li/admin
+          2. Select 'orbb.li' realm
+          3. Navigate to Clients -> grafana
+          4. Check the configuration and role mappings
+    
+    - name: Clean up temporary manifest files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/grafana-oauth-client-create.yaml
+        - /tmp/grafana-keycloak-config.yaml
+      tags: cleanup

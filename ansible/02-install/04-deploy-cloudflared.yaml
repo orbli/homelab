@@ -1,0 +1,175 @@
+---
+# 04 - Cloudflared Deployment via ArgoCD
+# This playbook:
+# 1. Deploys ArgoCD Applications (namespace and deployment)
+# 2. Creates tunnel credentials secret between namespace and deployment
+# 3. Monitors deployment health
+# 
+# Note: Clean separation of concerns:
+# - ArgoCD manages: namespace, ConfigMap, Deployment
+# - Ansible manages: tunnel credentials secret
+
+- name: Deploy Cloudflared via ArgoCD
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    namespace: ingress
+    gitops_namespace: gitops
+    tunnel_credentials_path: "../secrets/tunnel-credentials.json"
+    argocd_apps_path: "../../kubernetes/gitops/apps"
+    
+  tasks:
+    # Pre-deployment checks
+    - name: Check if tunnel credentials file exists
+      stat:
+        path: "{{ tunnel_credentials_path }}"
+      register: tunnel_creds_file
+      failed_when: not tunnel_creds_file.stat.exists
+      delegate_to: localhost
+      
+    - name: Fail if credentials file not found
+      fail:
+        msg: |
+          ERROR: Tunnel credentials file not found at {{ tunnel_credentials_path }}
+          Please ensure you have:
+          1. Created a cloudflare tunnel: cloudflared tunnel create home-hk1-cluster-tunnel
+          2. Copied the credentials file to {{ tunnel_credentials_path }}
+      when: not tunnel_creds_file.stat.exists
+
+    # STAGE 1: Deploy ArgoCD Applications (creates namespace via GitOps)
+    - name: Apply ArgoCD Applications for Cloudflared
+      shell: |
+        kubectl apply -k {{ argocd_apps_path }}
+      register: argocd_apps_result
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Wait for ArgoCD Applications to be created
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ item }}"
+        namespace: "{{ gitops_namespace }}"
+      register: app_check
+      until: app_check.resources | length > 0
+      retries: 10
+      delay: 5
+      loop:
+        - cloudflared-namespace
+        - cloudflared-deployment
+      delegate_to: localhost
+
+    # STAGE 2: Sync namespace app to create namespace
+    - name: Sync cloudflared-namespace application
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync cloudflared-namespace --retry-limit 3
+      register: sync_namespace
+      changed_when: true
+      delegate_to: localhost
+
+    - name: Wait for namespace to exist
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: ns_check
+      until: ns_check.resources | length > 0
+      retries: 10
+      delay: 2
+      delegate_to: localhost
+
+    # STAGE 3: Create tunnel credentials secret (before deployment)
+    - name: Load tunnel credentials and encode
+      set_fact:
+        tunnel_credentials_content: "{{ lookup('file', tunnel_credentials_path) | b64encode }}"
+      no_log: true
+
+    - name: Apply tunnel credentials secret from template
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('template', 'files/cloudflared-tunnel-secret.yaml.j2') | from_yaml }}"
+      delegate_to: localhost
+      no_log: true  # Don't log secret values
+
+    # STAGE 4: Sync deployment app to deploy Cloudflared
+    - name: Sync cloudflared-deployment application
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync cloudflared-deployment --retry-limit 3
+      register: sync_deployment
+      changed_when: true
+      delegate_to: localhost
+
+    # STAGE 5: Wait for deployment to be ready
+    - name: Wait for Cloudflared deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: cloudflared
+        namespace: "{{ namespace }}"
+      register: deployment
+      until: |
+        deployment.resources | length > 0 and
+        deployment.resources[0].status.conditions is defined and
+        deployment.resources[0].status.conditions | json_query('[?type==`Available`].status') | first | default(false) == 'True'
+      retries: 24
+      delay: 5
+      delegate_to: localhost
+
+    - name: Wait for Cloudflared pods to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app=cloudflared
+      register: cloudflared_pods
+      until: |
+        cloudflared_pods.resources | length > 0 and
+        cloudflared_pods.resources | json_query('[?status.phase==`Running`]') | length > 0 and
+        cloudflared_pods.resources | json_query('[].status.conditions[?type==`Ready`].status') | flatten | unique == ['True']
+      retries: 24
+      delay: 5
+      delegate_to: localhost
+
+    # STAGE 6: Monitor deployment status
+    - name: Wait for cloudflared-deployment app to be healthy
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait cloudflared-deployment --health --timeout 300
+      register: app_health
+      retries: 3
+      delay: 10
+      until: app_health.rc == 0
+      delegate_to: localhost
+
+    - name: Get Cloudflared pod logs for verification
+      shell: |
+        kubectl logs -n {{ namespace }} -l app=cloudflared --tail=20
+      register: pod_logs
+      delegate_to: localhost
+
+    - name: Display deployment status
+      debug:
+        msg: |
+          Cloudflared deployment completed!
+          
+          GitOps-managed (ArgoCD):
+          - cloudflared-namespace (namespace only)
+          - cloudflared-deployment (ConfigMap and Deployment)
+          
+          Ansible-managed:
+          - Tunnel credentials secret (created between namespace and deployment)
+          
+          Configured tunnels:
+          - https://keycloak-lab.orbb.li -> keycloak-service.iam:8080
+          - https://grafana-lab.orbb.li -> grafana.observability
+          
+          Monitor with:
+            ARGOCD_OPTS="--core" argocd app list
+            kubectl get all -n {{ namespace }}
+            kubectl logs -n {{ namespace }} -l app=cloudflared
+          
+          Recent pod logs:
+          {{ pod_logs.stdout }}
+      delegate_to: localhost
