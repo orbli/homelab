@@ -1,6 +1,6 @@
 # Homelab Infrastructure
 
-Production-ready Kubernetes homelab running on Raspberry Pi cluster with comprehensive monitoring, identity management, and GitOps deployment.
+Production-ready Kubernetes homelab running on Raspberry Pi cluster with GitOps-managed infrastructure, comprehensive monitoring, and centralized authentication.
 
 ## 🏗️ Infrastructure
 
@@ -8,14 +8,15 @@ Production-ready Kubernetes homelab running on Raspberry Pi cluster with compreh
 - **4x Raspberry Pi nodes** (home-hk1-pi[1-4])
 - **1x NFS Storage Server** (sd1)
 - **Network**: 192.168.88.0/24
-- **Cluster Domain**: home-hk1-cluster.orbb.li
+- **Cluster Domain**: home-hk1-cluster.orbb.li (via Tailscale)
 
 ### Software Stack
 - **Kubernetes**: K3s (lightweight Kubernetes)
+- **GitOps**: ArgoCD Core (headless)
 - **Networking**: Tailscale + Cloudflare Tunnels
-- **GitOps**: ArgoCD
-- **Monitoring**: Prometheus + Loki + Grafana
-- **Identity**: Keycloak
+- **Identity**: Keycloak with Google OAuth
+- **Monitoring**: Prometheus + Loki + Grafana (OAuth integrated)
+- **Log Collection**: Grafana Alloy
 - **Storage**: NFS CSI Driver
 
 ## 📁 Repository Structure
@@ -23,39 +24,37 @@ Production-ready Kubernetes homelab running on Raspberry Pi cluster with compreh
 ```
 homelab/
 ├── README.md                    # This file
+├── .gitignore                   # Git ignore rules
 ├── ansible/                     # Infrastructure automation
 │   ├── 01-setup/               # Initial cluster setup
-│   ├── 02-install/             # Service deployments
-│   ├── applications/           # Application configs
-│   ├── inventory.yaml          # Ansible inventory
+│   │   └── k8s_configs/        # Kubernetes configurations
+│   ├── 02-install/             # GitOps deployments
+│   │   ├── files/              # Jinja2 templates
+│   │   │   ├── helm-values/    # Helm chart values
+│   │   │   └── *.yaml.j2       # OAuth, secrets templates
+│   │   └── *.yaml              # Deployment playbooks
 │   └── secrets/                # Sensitive data (gitignored)
-├── kubernetes/                  # Kubernetes configurations
-│   ├── namespaces/             # Namespace-specific configs
-│   │   ├── devops/            # CI/CD tools
-│   │   ├── iam/               # Identity management
-│   │   ├── networking/        # Network services
-│   │   └── observability/     # Monitoring stack
-│   ├── argocd/                # ArgoCD applications
-│   └── helm-charts/           # Custom Helm charts
-├── monitoring/                  # Monitoring configurations
-│   ├── dashboards/            # Grafana dashboards
-│   └── alerts/                # Prometheus alerts
-├── scripts/                    # Management scripts
-│   ├── cleanup-argocd.sh     # ArgoCD removal
-│   └── sql/                   # Analysis queries
+├── kubernetes/                  # GitOps-managed resources
+│   ├── apps/                   # Kubernetes manifests
+│   │   ├── argocd/            # Self-hosting config
+│   │   ├── cloudflared/       # Tunnel deployment
+│   │   ├── iam/               # Keycloak & identity
+│   │   └── observability/     # Monitoring namespace
+│   └── gitops/                 # ArgoCD Applications
+│       └── apps/               # Application definitions
 ├── docs/                       # Documentation
-│   └── analysis/              # System analysis
-└── backup/                     # Backup configurations
+└── TODOs/                      # Future projects
 ```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Ansible installed locally
-- kubectl configured
+- kubectl configured with cluster access
 - Access to cluster nodes
+- Secrets file: `ansible/secrets/keycloak-secrets.yaml`
 
-### Initial Setup
+### Deployment Order
 
 1. **Configure Ansible Inventory**
    ```bash
@@ -63,26 +62,27 @@ homelab/
    # Edit inventory.yaml with your node details
    ```
 
-2. **Run Setup Playbooks**
+2. **Bootstrap GitOps (ArgoCD)**
    ```bash
-   # Install base infrastructure
    cd ansible
-   ansible-playbook 01-setup/05-install_k3s.yaml
-   ansible-playbook 01-setup/06-install_helm.yaml
-   ansible-playbook 01-setup/07-install_k8s_sc.yaml
+   ansible-playbook 02-install/01-install-argocd.yaml
+   ansible-playbook 02-install/02-argocd-self-hosting.yaml
    ```
 
 3. **Deploy Core Services**
    ```bash
-   # Identity Management
-   ansible-playbook 02-install/01-keycloak.yaml
+   # Identity Provider (Keycloak)
+   ansible-playbook 02-install/03-deploy-keycloak.yaml
    
-   # Networking
-   ansible-playbook 02-install/02-cloudflared.yaml
+   # Networking (Cloudflare Tunnel)
+   ansible-playbook 02-install/04-deploy-cloudflared.yaml
    
-   # Monitoring
-   ansible-playbook 02-install/04-install_monitoring_storages.yaml
-   ansible-playbook 02-install/05-install_monitoring.yaml
+   # OAuth Configuration for Grafana
+   ansible-playbook 02-install/06-config-grafana-oauth.yaml
+   
+   # Monitoring Stack
+   ansible-playbook 02-install/07-deploy-log-collection.yaml  # Loki + Alloy
+   ansible-playbook 02-install/08-deploy-prometheus-grafana.yaml
    ```
 
 ## 🔧 Management
@@ -93,79 +93,88 @@ homelab/
 ```bash
 kubectl get nodes
 kubectl get pods -A
+ARGOCD_OPTS="--core" argocd app list
 ```
 
-**Access Grafana:**
-```bash
-kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
-# Visit http://localhost:3000
-```
+**Access Services:**
+- **Grafana**: https://grafana-lab.orbb.li (OAuth via Keycloak)
+- **Keycloak**: https://keycloak-lab.orbb.li/admin
+- **Prometheus**: Internal at prometheus-kube-prometheus-prometheus:9090
 
-**Clean up ArgoCD:**
+**Cleanup Playbooks:**
 ```bash
-./scripts/cleanup-argocd.sh
+ansible-playbook 02-install/cleanup-keycloak.yaml
+ansible-playbook 02-install/cleanup-cloudflared.yaml
+ansible-playbook 02-install/cleanup-observability.yaml
 ```
 
 ### Namespace Overview
 
-| Namespace | Purpose | Key Services |
-|-----------|---------|--------------|
-| devops | CI/CD & GitOps | ArgoCD |
-| iam | Identity Management | Keycloak, PostgreSQL |
-| networking | Network Services | Tailscale, Cloudflare |
-| observability | Monitoring Stack | Prometheus, Loki, Grafana |
+| Namespace | Purpose | Key Services | Management |
+|-----------|---------|--------------|------------|
+| gitops | ArgoCD Core | ArgoCD components | Self-hosted |
+| iam | Identity Management | Keycloak, PostgreSQL | ArgoCD + Ansible |
+| ingress | Network Access | Cloudflare Tunnel | ArgoCD + Ansible |
+| observability | Monitoring Stack | Prometheus, Loki, Grafana, Alloy | Helm + Ansible |
 
 ## 📊 Monitoring
 
-### Metrics
-- **Prometheus**: System and application metrics
-- **Node Exporters**: Hardware and OS metrics
+### Metrics Collection
+- **Prometheus**: System and application metrics (100Gi storage, 30-day retention)
+- **Node Exporters**: Hardware and OS metrics from all nodes
 - **Kube State Metrics**: Kubernetes object metrics
 
-### Logs
-- **Loki**: Centralized log aggregation
-- **Grafana Alloy**: Log collection from all pods
+### Log Aggregation
+- **Loki**: Centralized log storage (50Gi, 30-day retention)
+- **Grafana Alloy**: Kubernetes API-based log collection
+- **Log Sources**: All namespaces and pods
 
-### Dashboards
-- Cluster overview
-- Node metrics
-- Pod resources
-- Application-specific dashboards
+### Visualization
+- **Grafana**: OAuth-integrated dashboards
+- **Default Dashboards**: Kubernetes cluster, node exporter, pod metrics
+- **Access**: https://grafana-lab.orbb.li (SSO via Keycloak)
 
 ## 🔐 Security
 
 ### Network Security
-- Tailscale for secure remote access
-- Cloudflare tunnels for public services
-- Internal services not exposed directly
+- **Tailscale**: Secure cluster access (all pods/services routable)
+- **Cloudflare Tunnels**: Public service exposure
+- **Internal DNS**: home-hk1-cluster.orbb.li domain
 
-### Identity & Access
-- Keycloak for centralized authentication
-- OIDC integration with services
-- RBAC policies for Kubernetes
+### Identity & Access Management
+- **Keycloak**: Centralized authentication with Google OAuth
+- **Grafana OAuth**: Role-based access (Admin/Editor/Viewer)
+- **Protocol Mappers**: Proper role extraction in JWT tokens
 
 ### Secrets Management
-- Ansible vault for sensitive data
-- Kubernetes secrets for runtime configs
-- **TODO**: Implement Sealed Secrets or External Secrets Operator
+- **Ansible Templates**: Jinja2 templates for secret generation
+- **GitOps Separation**: Secrets managed by Ansible, infrastructure by ArgoCD
+- **Runtime Secrets**: Kubernetes secrets for service credentials
 
-## 📝 Documentation
+## 📝 Key Features
 
-- [DevOps Namespace](kubernetes/namespaces/devops/README.md)
-- [IAM Namespace](kubernetes/namespaces/iam/README.md)
-- [Networking Namespace](kubernetes/namespaces/networking/README.md)
-- [Observability Namespace](kubernetes/namespaces/observability/README.md)
+### GitOps Architecture
+- **Separation of Concerns**: ArgoCD manages infrastructure, Ansible manages secrets
+- **Declarative Deployments**: All resources defined in Git
+- **Self-Hosted ArgoCD**: Core mode for resource efficiency
+
+### OAuth Integration
+- **Simplified Authentication**: No offline_access tokens
+- **Role Mapping**: Automatic role assignment based on email
+- **Single Sign-On**: Google OAuth via Keycloak
 
 ## 🚧 Roadmap
 
-- [ ] Headless ArgoCD deployment
-- [ ] Ingress controller (Traefik/Nginx)
+- [x] Headless ArgoCD deployment (Core mode)
+- [x] Keycloak identity provider
+- [x] OAuth integration for Grafana
+- [x] Comprehensive monitoring stack
+- [ ] Ingress controller (Traefik/Nginx) - See TODOs/ingress-project.md
 - [ ] Certificate management (cert-manager)
 - [ ] Backup solution (Velero)
-- [ ] Sealed Secrets for secret management
+- [ ] Sealed Secrets or External Secrets Operator
 - [ ] Network policies for namespace isolation
-- [ ] Automated testing pipeline
-- [ ] Disaster recovery procedures
+- [ ] Automated testing with homelab-playbook-tester agent
 
 ## 🤝 Contributing
 
@@ -184,6 +193,7 @@ For issues or questions, check the [docs](docs/) directory or review namespace-s
 
 ---
 
-**Last Updated**: 2025-08-22
-**Cluster Version**: K3s on Kubernetes v1.x
+**Last Updated**: 2025-08-30
+**Infrastructure**: K3s on Raspberry Pi cluster
+**Architecture**: GitOps with ArgoCD Core
 **Status**: Production
