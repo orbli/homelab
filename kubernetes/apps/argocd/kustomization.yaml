@@ -20,11 +20,22 @@ resources:
 - https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.0/manifests/core-install.yaml  # UPDATE 2: Change version here too
 - default-project.yaml  # Create default AppProject
 - argocd-self-management-rbac.yaml  # Grant cluster-admin for self-management
-- argocd-cm-patch.yaml  # Enable Helm support in Kustomize
 
-# Optional: Resource adjustments for Raspberry Pi
-# Using strategic merge patches for better compatibility
+# Strategic merge patches for better compatibility
 patches:
+# Enable Helm support in Kustomize
+- patch: |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: argocd-cm
+      namespace: gitops
+    data:
+      kustomize.buildOptions: "--enable-helm"
+  target:
+    kind: ConfigMap
+    name: argocd-cm
+# Optional: Resource adjustments for Raspberry Pi
 - patch: |-
     apiVersion: apps/v1
     kind: Deployment
