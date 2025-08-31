@@ -18,8 +18,6 @@ resources:
 - cloudflared-deployment-app.yaml    # Wave 40: Deployment and ConfigMap
 # Note: Tunnel credentials managed by Ansible between namespace and deployment
 
-# Observability Stack Applications (in order of sync wave)
-- observability-namespace-app.yaml   # Wave -30: Namespace first
-# - prometheus-app.yaml                # Wave 10: Prometheus operator and CRDs
-# - loki-app.yaml                      # Wave 20: Loki for log aggregation
-# - otel-collector-app.yaml            # Wave 30: OpenTelemetry Collector
+# Observability Stack - App of Apps pattern
+- observability-stack-app.yaml        # Parent app managing all observability components
+# Individual apps now managed by the parent app-of-apps

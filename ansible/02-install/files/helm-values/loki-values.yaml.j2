@@ -132,3 +132,12 @@ ingress:
 # Network policy
 networkPolicy:
   enabled: false
+
+# Loki Canary - test tool that writes and reads logs to verify Loki is working
+lokiCanary:
+  enabled: true
+  args:
+    - -addr={{ loki_service }}.{{ namespace }}.svc.{{ cluster_domain }}:3100
+    - -labelname=pod
+    - -labelvalue=$(POD_NAME)
+    - -push=true

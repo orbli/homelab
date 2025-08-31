@@ -1,0 +1,10 @@
+# Patch for ArgoCD ConfigMap to enable Helm support in Kustomize
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: gitops
+data:
+  # Enable Helm support for Kustomize builds
+  # This allows ArgoCD to process Helm charts referenced in Kustomization files
+  kustomize.buildOptions: "--enable-helm"
