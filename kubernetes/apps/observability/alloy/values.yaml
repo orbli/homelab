@@ -1,0 +1,77 @@
+# Grafana Alloy Configuration for ArgoCD deployment
+# This uses Kubernetes API to collect logs from all pods
+
+alloy:
+  configMap:
+    create: true
+    content: |
+      // Discover Kubernetes pods
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+      
+      // Relabel to add metadata
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+        
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label  = "node"
+        }
+      }
+      
+      // Collect logs using Kubernetes API
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.write.default.receiver]
+      }
+      
+      // Write to Loki
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.observability.svc.home-hk1-cluster.orbb.li:3100/loki/api/v1/push"
+        }
+      }
+
+# Deployment configuration
+controller:
+  type: deployment
+  replicas: 1
+
+# Service
+service:
+  enabled: true
+  type: ClusterIP
+
+# RBAC
+rbac:
+  create: true
+
+# Service Account
+serviceAccount:
+  create: true
+  name: alloy
+
+# Resources
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

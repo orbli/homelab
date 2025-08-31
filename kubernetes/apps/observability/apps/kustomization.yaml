@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Child applications for the observability stack
+# These are managed by the parent App of Apps
+
+resources:
+  - namespace-app.yaml
+  - loki-app.yaml
+  - alloy-app.yaml
+  # Future additions:
+  # - prometheus-app.yaml
+  # - grafana-app.yaml
+  # - tempo-app.yaml

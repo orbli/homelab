@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# This kustomization deploys Loki using Helm through ArgoCD
+namespace: observability
+
+# Helm chart configuration
+helmCharts:
+- name: loki
+  repo: https://grafana.github.io/helm-charts
+  version: 6.24.0
+  releaseName: loki
+  namespace: observability
+  valuesFile: values.yaml
+
+# Additional resources (post-sync hook to patch loki-canary)
+resources:
+- patch-loki-canary.yaml

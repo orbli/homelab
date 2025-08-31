@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: patch-loki-canary
+  namespace: observability
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      serviceAccountName: loki-canary-patcher
+      restartPolicy: Never
+      containers:
+      - name: patcher
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          kubectl patch daemonset loki-canary -n observability --type='json' \
+            -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/args", 
+                  "value": ["-addr=loki.observability.svc.home-hk1-cluster.orbb.li:3100", 
+                           "-labelname=pod", 
+                           "-labelvalue=$(POD_NAME)", 
+                           "-push=true"]}]'
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loki-canary-patcher
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: loki-canary-patcher
+  namespace: observability
+rules:
+- apiGroups: ["apps"]
+  resources: ["daemonsets"]
+  verbs: ["get", "patch"]
+  resourceNames: ["loki-canary"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: loki-canary-patcher
+  namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: loki-canary-patcher
+subjects:
+- kind: ServiceAccount
+  name: loki-canary-patcher
+  namespace: observability
