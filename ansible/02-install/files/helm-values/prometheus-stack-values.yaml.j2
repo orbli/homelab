@@ -166,7 +166,9 @@ grafana:
       name_attribute_path: full_name
       login_attribute_path: username
       # Role mapping - using JMESPath to map Keycloak roles to Grafana roles
-      role_attribute_path: "contains(resource_access.grafana.roles[*], 'Admin') && 'Admin' || contains(resource_access.grafana.roles[*], 'Editor') && 'Editor' || 'Viewer'"
+      # Maps: realm 'admin' -> Grafana 'GrafanaAdmin' (superadmin)
+      # Client roles: grafana-admin -> Admin, grafana-editor -> Editor, grafana-viewer -> Viewer
+      role_attribute_path: "contains(realm_roles[*], 'admin') && 'GrafanaAdmin' || contains(resource_access.grafana.roles[*], 'grafana-admin') && 'Admin' || contains(resource_access.grafana.roles[*], 'grafana-editor') && 'Editor' || contains(resource_access.grafana.roles[*], 'grafana-viewer') && 'Viewer'"
       role_attribute_strict: true
       allow_assign_grafana_admin: true
       # Use ID token for role extraction

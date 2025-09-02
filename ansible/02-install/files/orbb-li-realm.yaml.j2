@@ -10,10 +10,10 @@ spec:
     enabled: true
     displayName: "Orbb.li Realm"
     sslRequired: external
-    registrationAllowed: true  # Allow new users from Google
+    registrationAllowed: false  # Disable user self-registration
     loginWithEmailAllowed: true
     duplicateEmailsAllowed: false
-    resetPasswordAllowed: true
+    resetPasswordAllowed: false  # Disable forgot password
     editUsernameAllowed: false
     bruteForceProtected: true
     permanentLockout: false

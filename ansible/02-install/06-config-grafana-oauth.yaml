@@ -29,9 +29,7 @@
       - "profile"
       - "roles"
     
-    # Grafana admin users
-    grafana_admin_users:
-      - "mail@orbb.li"
+    # Default role for users without specific role assignments
     grafana_default_role: "Viewer"
     
   tasks:
@@ -161,13 +159,13 @@
           ============================
           Client ID: {{ oauth_client_id }}
           Secret stored in: {{ namespace }}/{{ oauth_secret_name }}
-          Admin users: {{ grafana_admin_users | join(', ') }}
+          Realm admins: Configured in realm import (03-deploy-keycloak.yaml)
           
           The Keycloak OAuth client has been configured with:
           - Client ID: {{ oauth_client_id }}
           - Redirect URIs configured for {{ app_root_url }}
-          - Roles: Admin, Editor, Viewer
-          - Admin users assigned Admin role
+          - Client roles: grafana-admin, grafana-editor, grafana-viewer
+          - Realm admin users get Grafana Admin automatically
     
     - name: Create Grafana values file
       copy:
@@ -192,7 +190,7 @@
           OAuth Configuration:
           - Client: {{ oauth_client_id }}
           - Secret: Stored in {{ namespace }}/{{ oauth_secret_name }}
-          - Admins: {{ grafana_admin_users | join(', ') }}
+          - Realm admins: Get Grafana Admin automatically (configured in realm)
           - Login URL: {{ app_root_url }}
           - SSO Provider: Keycloak with Google IDP hint
           

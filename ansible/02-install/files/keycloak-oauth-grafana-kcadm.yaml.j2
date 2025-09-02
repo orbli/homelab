@@ -45,37 +45,17 @@ spec:
           echo "Found client with ID: $CLIENT_ID"
           
           # Create Grafana-specific client roles
-          {% if grafana_admin_users is defined %}
           echo "Creating Grafana client roles..."
-          for ROLE in Admin Editor Viewer; do
+          for ROLE in grafana-admin grafana-editor grafana-viewer; do
             /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/roles \
               -r {{ keycloak_realm }} \
               -s name=$ROLE \
-              -s description="Grafana $ROLE role" 2>/dev/null || echo "Role $ROLE already exists"
+              -s description="Grafana ${ROLE#grafana-} role" 2>/dev/null || echo "Role $ROLE already exists"
           done
           
-          # Assign admin users to Admin role
-          {% for admin_email in grafana_admin_users %}
-          echo "Assigning Admin role to {{ admin_email }}..."
-          USER_ID=$(/opt/keycloak/bin/kcadm.sh get users \
-            -r {{ keycloak_realm }} \
-            -q email={{ admin_email }} \
-            --fields id \
-            --format csv \
-            --noquotes | tail -1)
-          
-          if [ -n "$USER_ID" ] && [ "$USER_ID" != "id" ]; then
-            /opt/keycloak/bin/kcadm.sh add-roles \
-              -r {{ keycloak_realm }} \
-              --uid "$USER_ID" \
-              --cclientid {{ oauth_client_id | default(app_name) }} \
-              --rolename Admin 2>/dev/null || echo "Role already assigned"
-            echo "Assigned Admin role to user $USER_ID"
-          else
-            echo "User {{ admin_email }} not found, skipping role assignment"
-          fi
-          {% endfor %}
-          {% endif %}
+          echo "Grafana client roles created successfully"
+          # Note: Realm admin users are already configured in the realm import (03-deploy-keycloak.yaml)
+          # Users with realm 'admin' role will automatically get Grafana Admin access
           
           # Configure protocol mappers for role extraction
           echo "Configuring protocol mappers for Grafana..."
@@ -90,7 +70,7 @@ spec:
               -r {{ keycloak_realm }} 2>/dev/null || true
           fi
           
-          # Create client roles mapper - critical for Grafana role mapping
+          # Create client roles mapper for Grafana role mapping
           echo "Creating client roles protocol mapper..."
           /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models \
             -r {{ keycloak_realm }} \
@@ -107,6 +87,23 @@ spec:
             -s "config.\"usermodel.clientRoleMapping.clientId\"={{ oauth_client_id | default(app_name) }}"
           
           echo "Client roles mapper created successfully"
+          
+          # Also create realm roles mapper for admin detection
+          echo "Creating realm roles protocol mapper..."
+          /opt/keycloak/bin/kcadm.sh create clients/$CLIENT_ID/protocol-mappers/models \
+            -r {{ keycloak_realm }} \
+            -s name="realm-roles" \
+            -s protocol="openid-connect" \
+            -s protocolMapper="oidc-usermodel-realm-role-mapper" \
+            -s consentRequired=false \
+            -s 'config."multivalued"=true' \
+            -s 'config."userinfo.token.claim"=true' \
+            -s 'config."id.token.claim"=true' \
+            -s 'config."access.token.claim"=true' \
+            -s 'config."claim.name"=realm_roles' \
+            -s 'config."jsonType.label"=String' 2>/dev/null || echo "Realm roles mapper already exists"
+          
+          echo "Realm roles mapper created successfully"
           
           # Ensure basic attribute mappers exist
           echo "Configuring basic attribute mappers..."
