@@ -6,12 +6,13 @@
 
 | Component | Namespace | Helm Release | Installation Script | Status |
 |-----------|-----------|--------------|-------------------|---------|
-| **Keycloak** | iam | keycloak (failed status) | `02-install/01-keycloak.yaml` | ⚠️ Failed deployment |
-| **Cloudflare Tunnels** | networking | Manual deployment | `02-install/02-cloudflared.yaml` | ✅ Running |
-| **Loki** | observability | loki | `02-install/04-install_monitoring_storages.yaml` | ✅ Running |
-| **Prometheus Stack** | observability | kube-prometheus-stack | `02-install/04-install_monitoring_storages.yaml` | ✅ Running |
-| **K8s Monitoring (Alloy)** | observability | k8s-monitoring, alloy-logs, alloy-singleton | `02-install/05-install_monitoring.yaml` | ✅ Running |
-| **ArgoCD** | devops | Removed | `02-install/03-install_argocd.yaml` / `03-install_argocd_headless.yaml` | 🔄 Ready to redeploy |
+| **ArgoCD** | gitops | ArgoCD Core | `02-install/01-install-argocd.yaml` / `02-argocd-self-hosting.yaml` | ✅ Running |
+| **Cloudflare Tunnels** | ingress | Manual deployment | `02-install/03-deploy-cloudflared.yaml` | ✅ Running |
+| **Keycloak** | iam | keycloak | `02-install/04-deploy-keycloak.yaml` | ✅ Running |
+| **Loki** | observability | loki | `02-install/05-deploy-log-collection.yaml` | ✅ Running |
+| **Alloy** | observability | alloy | `02-install/05-deploy-log-collection.yaml` | ✅ Running |
+| **Grafana OAuth** | observability | OAuth Config | `02-install/06-config-grafana-oauth.yaml` | ✅ Configured |
+| **Prometheus Stack** | observability | prometheus | `02-install/07-deploy-prometheus-grafana.yaml` | ✅ Running |
 
 ### 🔍 Infrastructure Components (from 01-setup)
 
@@ -25,10 +26,9 @@
 | **Storage Class** | `01-setup/07-install_k8s_sc.yaml` | NFS CSI driver | ✅ Deployed (csi-driver-nfs) |
 | **Tailscale Operator** | `01-setup/09-install_ts_k8s_operator.yaml` | K8s Tailscale integration | ✅ Deployed |
 
-### ⚠️ Issues Found
+### ✅ Current Status
 
-1. **Keycloak**: Helm release shows "failed" status - needs investigation
-2. **Missing Script**: No dedicated script for Tailscale Operator in `02-install/` (it's in `01-setup/`)
+All components are successfully deployed with proper GitOps management through ArgoCD.
 
 ### 📊 Summary
 
@@ -36,30 +36,24 @@
 
 **Directory Organization**:
 - `01-setup/`: Infrastructure and cluster foundation (8 scripts)
-- `02-install/`: Application deployments (7 scripts + 1 removal script)
+- `02-install/`: Application deployments (7 deployment scripts + 3 cleanup scripts)
 
-**All Helm Releases Accounted For**:
-1. `csi-driver-nfs` → `01-setup/07-install_k8s_sc.yaml`
-2. `k8s-monitoring` → `02-install/05-install_monitoring.yaml`
-3. `k8s-monitoring-alloy-*` → `02-install/05-install_monitoring.yaml`
-4. `keycloak` → `02-install/01-keycloak.yaml`
-5. `kube-prometheus-stack` → `02-install/04-install_monitoring_storages.yaml`
-6. `loki` → `02-install/04-install_monitoring_storages.yaml`
-7. `tailscale-operator` → `01-setup/09-install_ts_k8s_operator.yaml`
+**All Components Managed Via GitOps**:
+1. `ArgoCD Core` → `02-install/01-install-argocd.yaml` + `02-argocd-self-hosting.yaml`
+2. `Cloudflare Tunnel` → `02-install/03-deploy-cloudflared.yaml`
+3. `Keycloak` → `02-install/04-deploy-keycloak.yaml`
+4. `Loki + Alloy` → `02-install/05-deploy-log-collection.yaml`
+5. `Grafana OAuth` → `02-install/06-config-grafana-oauth.yaml`
+6. `Prometheus + Grafana` → `02-install/07-deploy-prometheus-grafana.yaml`
+7. `Tailscale Operator` → `01-setup/09-install_ts_k8s_operator.yaml`
+8. `NFS CSI Driver` → `01-setup/07-install_k8s_sc.yaml`
 
-## Recommendations
+## Key Features
 
-1. **Fix Keycloak**: Investigate why Keycloak Helm release is in failed state
-   ```bash
-   helm status keycloak -n iam
-   kubectl describe pods -n iam
-   ```
-
-2. **Consider Reorganization**: Move Tailscale Operator script from `01-setup/` to `02-install/` for consistency
-
-3. **Add Validation Scripts**: Create health check scripts for each component
-
-4. **Document Dependencies**: Some components depend on others (e.g., monitoring needs storage class)
+1. **GitOps Management**: All infrastructure managed through ArgoCD
+2. **OAuth Integration**: Grafana integrated with Keycloak for SSO
+3. **Complete Observability**: Prometheus metrics + Loki logs + Grafana dashboards
+4. **Network Security**: Tailscale for secure access, Cloudflare for public exposure
 
 ## Reinstallation Order
 
@@ -76,23 +70,25 @@ If rebuilding from scratch:
    07-install_k8s_sc.yaml
    ```
 
-2. **Phase 2 - Core Services** (02-install):
+2. **Phase 2 - GitOps** (02-install):
    ```bash
-   01-keycloak.yaml
+   01-install-argocd.yaml
+   02-argocd-self-hosting.yaml
+   ```
+
+3. **Phase 3 - Core Services** (02-install):
+   ```bash
+   03-deploy-cloudflared.yaml
+   04-deploy-keycloak.yaml
    09-install_ts_k8s_operator.yaml (from 01-setup)
-   02-cloudflared.yaml
    ```
 
-3. **Phase 3 - Observability** (02-install):
+4. **Phase 4 - Observability** (02-install):
    ```bash
-   04-install_monitoring_storages.yaml
-   05-install_monitoring.yaml
-   ```
-
-4. **Phase 4 - GitOps** (02-install):
-   ```bash
-   03-install_argocd_headless.yaml
+   05-deploy-log-collection.yaml
+   06-config-grafana-oauth.yaml
+   07-deploy-prometheus-grafana.yaml
    ```
 
 ---
-*Generated: 2025-08-22*
+*Updated: 2025-09-02*

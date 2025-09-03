@@ -56,11 +56,17 @@ The parent application automatically manages all child applications, ensuring pr
 For initial deployment or manual sync:
 
 ```bash
-# Deploy via GitOps
-ansible-playbook homelab/ansible/02-install/07-deploy-observability-gitops.yaml
+# Deploy log collection (Loki + Alloy)
+ansible-playbook homelab/ansible/02-install/05-deploy-log-collection.yaml
+
+# Configure Grafana OAuth
+ansible-playbook homelab/ansible/02-install/06-config-grafana-oauth.yaml
+
+# Deploy Prometheus and Grafana
+ansible-playbook homelab/ansible/02-install/07-deploy-prometheus-grafana.yaml
 
 # Cleanup
-ansible-playbook homelab/ansible/03-cleanup/07-cleanup-observability.yaml
+ansible-playbook homelab/ansible/02-install/cleanup-observability.yaml
 ```
 
 ## Configuration

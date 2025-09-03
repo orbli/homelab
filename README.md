@@ -71,18 +71,16 @@ homelab/
 
 3. **Deploy Core Services**
    ```bash
-   # Identity Provider (Keycloak)
-   ansible-playbook 02-install/03-deploy-keycloak.yaml
-   
    # Networking (Cloudflare Tunnel)
-   ansible-playbook 02-install/04-deploy-cloudflared.yaml
+   ansible-playbook 02-install/03-deploy-cloudflared.yaml
    
-   # OAuth Configuration for Grafana
-   ansible-playbook 02-install/06-config-grafana-oauth.yaml
+   # Identity Provider (Keycloak)
+   ansible-playbook 02-install/04-deploy-keycloak.yaml
    
    # Monitoring Stack
-   ansible-playbook 02-install/07-deploy-log-collection.yaml  # Loki + Alloy
-   ansible-playbook 02-install/08-deploy-prometheus-grafana.yaml
+   ansible-playbook 02-install/05-deploy-log-collection.yaml  # Loki + Alloy
+   ansible-playbook 02-install/06-config-grafana-oauth.yaml   # OAuth Configuration
+   ansible-playbook 02-install/07-deploy-prometheus-grafana.yaml
    ```
 
 ## 🔧 Management
