@@ -1,16 +1,17 @@
 # Grafana Alloy Configuration for ArgoCD deployment
-# This uses Kubernetes API to collect logs from all pods
+# This collects logs, metrics, and traces from all pods
 
 alloy:
   configMap:
     create: true
     content: |
-      // Discover Kubernetes pods
+      // ====== LOG COLLECTION ======
+      // Discover Kubernetes pods for logs
       discovery.kubernetes "pods" {
         role = "pod"
       }
       
-      // Relabel to add metadata
+      // Relabel to add metadata for logs
       discovery.relabel "pods" {
         targets = discovery.kubernetes.pods.targets
         
@@ -41,10 +42,54 @@ alloy:
         forward_to = [loki.write.default.receiver]
       }
       
-      // Write to Loki
+      // Write logs to Loki
       loki.write "default" {
         endpoint {
           url = "http://loki.observability.svc.home-hk1-cluster.orbb.li:3100/loki/api/v1/push"
+        }
+      }
+      
+      // ====== TRACE COLLECTION (OTEL) ======
+      // OTLP receiver for traces
+      otelcol.receiver.otlp "default" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        
+        output {
+          traces  = [otelcol.processor.batch.default.input]
+        }
+      }
+      
+      // Batch processor for better performance
+      otelcol.processor.batch "default" {
+        output {
+          traces = [otelcol.processor.k8sattributes.default.input]
+        }
+      }
+      
+      // Add Kubernetes attributes to traces
+      otelcol.processor.k8sattributes "default" {
+        extract {
+          metadata = ["k8s.namespace.name", "k8s.pod.name", "k8s.deployment.name", "k8s.node.name"]
+        }
+        
+        output {
+          traces = [otelcol.exporter.otlp.tempo.input]
+        }
+      }
+      
+      // Export traces to Tempo
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo.observability.svc.home-hk1-cluster.orbb.li:4317"
+          tls {
+            insecure = true
+          }
         }
       }
 
@@ -57,6 +102,19 @@ controller:
 service:
   enabled: true
   type: ClusterIP
+  ports:
+    - name: http-metrics
+      port: 12345
+      targetPort: 12345
+      protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
 
 # RBAC
 rbac:
