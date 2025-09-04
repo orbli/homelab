@@ -29,6 +29,23 @@ tempo:
     max_traces_per_user: 100000
     ingestion_rate_limit_bytes: 50000000  # 50MB/s
     ingestion_burst_size_bytes: 100000000  # 100MB
+  
+  # Receivers configuration
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+    jaeger:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:14250
+        thrift_http:
+          endpoint: 0.0.0.0:14268
+    zipkin:
+      endpoint: 0.0.0.0:9411
 
 # Distributor - receives spans from clients
 distributor:
@@ -48,23 +65,14 @@ distributor:
     zipkinPort: 9411
     jaegerThriftHttpPort: 14268
     jaegerGrpcPort: 14250
-    
-  config:
-    receivers:
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-      zipkin:
-        endpoint: 0.0.0.0:9411
-      jaeger:
-        protocols:
-          thrift_http:
-            endpoint: 0.0.0.0:14268
-          grpc:
-            endpoint: 0.0.0.0:14250
+  
+  # Extra args to make receivers listen on all interfaces
+  extraArgs:
+    - "-distributor.receivers.otlp.protocols.grpc.endpoint=0.0.0.0:4317"
+    - "-distributor.receivers.otlp.protocols.http.endpoint=0.0.0.0:4318"
+    - "-distributor.receivers.jaeger.protocols.grpc.endpoint=0.0.0.0:14250"
+    - "-distributor.receivers.jaeger.protocols.thrift_http.endpoint=0.0.0.0:14268"
+    - "-distributor.receivers.zipkin.endpoint=0.0.0.0:9411"
 
 # Ingester - processes and stores spans
 ingester:
