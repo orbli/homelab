@@ -49,7 +49,7 @@ pyroscope:
     storage:
       backend: filesystem
       filesystem:
-        directory: /data
+        path: /data
     
     # Server configuration
     server:
