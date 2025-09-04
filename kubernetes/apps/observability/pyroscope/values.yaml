@@ -39,6 +39,9 @@ pyroscope:
     profiles.grafana.com/goroutine.scrape: "true"
     profiles.grafana.com/goroutine.port: "4040"
   
+  # Components configuration - empty means single-binary mode
+  components: {}
+  
   # Pyroscope configuration using structuredConfig
   # This gets merged with the default config
   structuredConfig:
