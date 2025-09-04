@@ -1,115 +1,21 @@
 # Grafana Tempo Helm Chart Values
-# Simple single-binary deployment for distributed tracing
+# Minimal configuration - using chart defaults
 
-# Tempo configuration
-tempo:
-  # Use single-binary mode for simpler deployment
-  reportingEnabled: false
-  
-  # Server configuration
-  server:
-    http_listen_port: 3100
-    grpc_listen_port: 9095
-    log_level: info
-    
-  # Storage configuration - local storage
-  storage:
-    trace:
-      backend: local
-      local:
-        path: /var/tempo/traces
-      wal:
-        path: /var/tempo/wal
-      block:
-        bloom_filter_false_positive: 0.05
-        
-  # Compactor configuration
-  compactor:
-    compaction:
-      block_retention: 720h  # 30 days
-      
-  # Distributor configuration with receivers
-  distributor:
-    receivers:
-      # OTLP receiver (OpenTelemetry)
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-      # Jaeger receiver
-      jaeger:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:14250
-          thrift_http:
-            endpoint: 0.0.0.0:14268
-      # Zipkin receiver
-      zipkin:
-        endpoint: 0.0.0.0:9411
-        
-  # Ingester configuration
-  ingester:
-    max_block_bytes: 1073741824  # 1GB
-    max_block_duration: 30m
-    
-  # Query limits
-  query_frontend:
-    max_outstanding_per_tenant: 200
-
-# Deployment configuration
-replicas: 1
-
-# Resources
-resources:
-  requests:
-    cpu: 200m
-    memory: 256Mi
-  limits:
-    cpu: 1000m
-    memory: 2Gi
-
-# Persistence
+# Enable persistence
 persistence:
   enabled: true
   storageClassName: k8s-csi
-  size: 20Gi
-  accessMode: ReadWriteOnce
+  size: 10Gi
 
-# Service configuration
-service:
-  type: ClusterIP
-  annotations: {}
+# Basic resource limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
-# ServiceMonitor for Prometheus metrics scraping
+# ServiceMonitor for Prometheus
 serviceMonitor:
   enabled: true
-  interval: 30s
-
-# Tempo-query for Jaeger UI compatibility (optional)
-tempoQuery:
-  enabled: false
-
-# Security context
-securityContext:
-  fsGroup: 10001
-  runAsGroup: 10001
-  runAsNonRoot: true
-  runAsUser: 10001
-
-# Pod security context
-podSecurityContext:
-  fsGroup: 10001
-  runAsGroup: 10001
-  runAsNonRoot: true
-  runAsUser: 10001
-
-# Affinity rules - none needed for single replica
-affinity: {}
-
-# Node selector
-nodeSelector: {}
-
-# Tolerations
-tolerations: []
