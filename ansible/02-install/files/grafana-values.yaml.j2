@@ -62,17 +62,17 @@ grafana:
               filterByTraceID: true
               filterBySpanID: false
             tracesToMetrics:
-              datasourceUid: prometheus
+              datasourceUid: Prometheus
               spanStartTimeShift: "-1h"
               spanEndTimeShift: "1h"
             serviceMap:
-              datasourceUid: prometheus
+              datasourceUid: Prometheus
             nodeGraph:
               enabled: true
             search:
               hide: false
             lokiSearch:
-              datasourceUid: loki
+              datasourceUid: Loki
   
   # Grafana.ini configuration
   grafana.ini:
