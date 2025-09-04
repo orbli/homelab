@@ -93,32 +93,85 @@ alloy:
         }
       }
       
-      // Profile collection discovery
-      discovery.kubernetes "pods" {
+      // ====== PROFILE COLLECTION FOR PYROSCOPE ======
+      // Discover pods for profiling
+      discovery.kubernetes "profile_pods" {
         role = "pod"
         namespaces {
           own_namespace = false
         }
       }
       
-      // Scrape profiles from pods with annotations
+      // Filter pods with profile annotations
       discovery.relabel "profile_pods" {
-        targets = discovery.kubernetes.pods.targets
+        targets = discovery.kubernetes.profile_pods.targets
         
-        // Only keep pods with profile annotations
+        // Keep pods with CPU profiling enabled
         rule {
           source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_cpu_scrape"]
           regex = "true"
           action = "keep"
         }
         
-        // Set the profile port
+        // Set the address using pod IP and port from annotation
         rule {
-          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_cpu_port"]
-          target_label = "__profile_port__"
+          source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_annotation_profiles_grafana_com_cpu_port"]
+          separator = ":"
+          target_label = "__address__"
         }
         
-        // Set pod labels
+        // Add metadata labels
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label = "node"
+        }
+      }
+      
+      // Scrape CPU profiles
+      pyroscope.scrape "cpu" {
+        targets = discovery.relabel.profile_pods.output
+        
+        profiling_config {
+          profile.process_cpu {
+            enabled = true
+            path = "/debug/pprof/profile"
+          }
+        }
+        
+        forward_to = [pyroscope.write.profiles.receiver]
+      }
+      
+      // Discover pods for memory profiling
+      discovery.relabel "memory_pods" {
+        targets = discovery.kubernetes.profile_pods.targets
+        
+        // Keep pods with memory profiling enabled
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_memory_scrape"]
+          regex = "true"
+          action = "keep"
+        }
+        
+        // Set the address
+        rule {
+          source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_annotation_profiles_grafana_com_memory_port"]
+          separator = ":"
+          target_label = "__address__"
+        }
+        
+        // Add metadata labels
         rule {
           source_labels = ["__meta_kubernetes_namespace"]
           target_label = "namespace"
@@ -129,19 +182,54 @@ alloy:
         }
       }
       
-      // Collect profiles and send to Pyroscope
-      pyroscope.scrape "kubernetes" {
-        targets = discovery.relabel.profile_pods.output
+      // Scrape memory profiles
+      pyroscope.scrape "memory" {
+        targets = discovery.relabel.memory_pods.output
         
         profiling_config {
-          profile.process_cpu {
-            enabled = true
-            path = "/debug/pprof/profile"
-          }
           profile.memory {
             enabled = true
-            path = "/debug/pprof/heap"  
+            path = "/debug/pprof/heap"
           }
+        }
+        
+        forward_to = [pyroscope.write.profiles.receiver]
+      }
+      
+      // Discover pods for goroutine profiling
+      discovery.relabel "goroutine_pods" {
+        targets = discovery.kubernetes.profile_pods.targets
+        
+        // Keep pods with goroutine profiling enabled
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_goroutine_scrape"]
+          regex = "true"
+          action = "keep"
+        }
+        
+        // Set the address
+        rule {
+          source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_annotation_profiles_grafana_com_goroutine_port"]
+          separator = ":"
+          target_label = "__address__"
+        }
+        
+        // Add metadata labels
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label = "pod"
+        }
+      }
+      
+      // Scrape goroutine profiles
+      pyroscope.scrape "goroutine" {
+        targets = discovery.relabel.goroutine_pods.output
+        
+        profiling_config {
           profile.goroutine {
             enabled = true
             path = "/debug/pprof/goroutine"
