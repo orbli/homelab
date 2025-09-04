@@ -190,13 +190,25 @@
       retries: 60
       delay: 5
     
-    - name: Check if Grafana configuration job succeeded
-      fail:
-        msg: "Grafana configuration job failed. Check logs with: kubectl logs -n {{ namespace }} job/{{ app_name }}-keycloak-grafana-config"
+    - name: Check Grafana configuration job logs for actual errors
+      shell: |
+        kubectl logs -n {{ namespace }} job/{{ app_name }}-keycloak-grafana-config | tail -20
+      register: grafana_job_logs
       when:
         - grafana_config_job.resources | length > 0
         - grafana_config_job.resources[0].status.failed is defined
         - grafana_config_job.resources[0].status.failed > 0
+      changed_when: false
+    
+    - name: Check if Grafana configuration job succeeded or roles already exist
+      fail:
+        msg: "Grafana configuration job failed with unexpected error. Check logs with: kubectl logs -n {{ namespace }} job/{{ app_name }}-keycloak-grafana-config"
+      when:
+        - grafana_config_job.resources | length > 0
+        - grafana_config_job.resources[0].status.failed is defined
+        - grafana_config_job.resources[0].status.failed > 0
+        - "'already exists' not in grafana_job_logs.stdout"
+        - "'Protocol mapper exists' not in grafana_job_logs.stdout"
     
     - name: Verify OAuth client secret was created
       kubernetes.core.k8s_info:
