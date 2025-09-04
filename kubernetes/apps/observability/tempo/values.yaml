@@ -1,11 +1,13 @@
-# Grafana Tempo Helm Chart Values for ArgoCD deployment
-# Distributed tracing backend with OTLP support
+# Grafana Tempo Distributed Helm Chart Values
+# Scalable distributed tracing with OTLP support
 
-# Replicas
-replicas: 1
+# Global settings
+global:
+  clusterDomain: home-hk1-cluster.orbb.li
 
+# Tempo configuration
 tempo:
-  # Storage backend
+  # Storage configuration
   storage:
     trace:
       backend: local
@@ -13,70 +15,167 @@ tempo:
         path: /var/tempo/traces
       wal:
         path: /var/tempo/wal
-  
-  # Retention settings  
+        
+  # Retention
   retention: 720h  # 30 days
   
-  # Server configuration - this is the HTTP API port
+  # Server ports
   server:
-    http_listen_port: 3200
+    http_listen_port: 3100
     grpc_listen_port: 9095
-  
-  # Receivers configuration for traces
-  receivers:
-    otlp:
-      protocols:
-        grpc:
-          endpoint: "0.0.0.0:4317"
-        http:
-          endpoint: "0.0.0.0:4318"
-    zipkin:
-      endpoint: "0.0.0.0:9411"
-    jaeger:
-      protocols:
-        thrift_http:
-          endpoint: "0.0.0.0:14268"
-        grpc:
-          endpoint: "0.0.0.0:14250"
-        thrift_compact:
-          endpoint: "0.0.0.0:6831"
-        thrift_binary:
-          endpoint: "0.0.0.0:6832"
-  
-  # Metrics generator disabled (we use Prometheus)
-  metricsGenerator:
-    enabled: false
-  
-  # Resources
+    
+  # Limits configuration
+  overrides:
+    max_traces_per_user: 100000
+    ingestion_rate_limit_bytes: 50000000  # 50MB/s
+    ingestion_burst_size_bytes: 100000000  # 100MB
+
+# Distributor - receives spans from clients
+distributor:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    # OTLP and other receivers ports
+    otlpGrpcPort: 4317
+    otlpHttpPort: 4318
+    zipkinPort: 9411
+    jaegerThriftHttpPort: 14268
+    jaegerGrpcPort: 14250
+    
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      zipkin:
+        endpoint: 0.0.0.0:9411
+      jaeger:
+        protocols:
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+          grpc:
+            endpoint: 0.0.0.0:14250
+
+# Ingester - processes and stores spans
+ingester:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: k8s-csi
+    size: 10Gi
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
     limits:
       cpu: 1000m
-      memory: 2Gi
+      memory: 1Gi
 
-# Persistence
-persistence:
+# Querier - serves queries
+querier:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Query Frontend - caches and optimizes queries
+queryFrontend:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+    port: 3100  # This is what Grafana connects to
+
+# Compactor - compacts blocks and manages retention
+compactor:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: k8s-csi
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Metrics Generator - disabled (we use Prometheus)
+metricsGenerator:
+  enabled: false
+
+# Gateway - nginx gateway for routing
+gateway:
   enabled: true
-  storageClassName: k8s-csi
-  size: 20Gi
-  accessModes:
-    - ReadWriteOnce
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  service:
+    type: ClusterIP
+    port: 80
+    
+  # Basic auth disabled
+  basicAuth:
+    enabled: false
 
-# Service configuration
-service:
-  type: ClusterIP
-  
-# Service Monitor for Prometheus
+# Memcached for caching
+memcached:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Service Monitor for Prometheus scraping
 serviceMonitor:
   enabled: true
   interval: 30s
 
-# Ingress disabled (using Tailscale)
-ingress:
-  enabled: false
+# Persistence for traces storage
+persistence:
+  enabled: true
+  storageClass: k8s-csi
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
 
-# Test
-test:
-  enabled: false
+# Tracing disabled to avoid loops
+traces:
+  otlp:
+    grpc:
+      enabled: false
+    http:
+      enabled: false
+      
+# Use single binary for simple setup (set to false for true distributed mode)
+useLegacySingleBinary: false
