@@ -1,0 +1,134 @@
+---
+- name: Deploy Grafana Tempo for Distributed Tracing
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    namespace: observability
+    
+  tasks:
+    - name: Ensure ArgoCD is running
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: gitops
+        label_selectors:
+          - app.kubernetes.io/name=argocd-application-controller
+      register: argocd_pods
+      failed_when: argocd_pods.resources | length == 0
+    
+    - name: Check if observability namespace app exists
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: observability-namespace
+        namespace: gitops
+      register: namespace_app_check
+    
+    - name: Deploy observability namespace via ArgoCD if not exists
+      shell: |
+        kubectl apply -f ../../kubernetes/gitops/apps/observability-namespace-app.yaml
+      when: namespace_app_check.resources | length == 0
+      register: namespace_app
+      changed_when: "'configured' in namespace_app.stdout or 'created' in namespace_app.stdout"
+    
+    - name: Wait for namespace ArgoCD app to sync
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: observability-namespace
+        namespace: gitops
+      register: namespace_app_status
+      until: 
+        - namespace_app_status.resources | length > 0
+        - namespace_app_status.resources[0].status.sync.status == "Synced"
+      retries: 30
+      delay: 5
+    
+    - name: Verify namespace exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: namespace_check
+      failed_when: namespace_check.resources | length == 0
+    
+    - name: Deploy Tempo ArgoCD Application
+      shell: |
+        kubectl apply -f ../../kubernetes/apps/observability/apps/tempo-app.yaml
+      register: tempo_app
+      changed_when: "'configured' in tempo_app.stdout or 'created' in tempo_app.stdout"
+    
+    - name: Wait for Tempo app to sync
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait observability-tempo \
+          --timeout 300 \
+          --health \
+          --sync
+      register: tempo_sync
+      changed_when: false
+    
+    - name: Verify Tempo deployment
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=tempo
+      register: tempo_pods
+      until:
+        - tempo_pods.resources | length > 0
+        - tempo_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: 30
+      delay: 10
+    
+    - name: Check Tempo service endpoints
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: tempo
+        namespace: "{{ namespace }}"
+      register: tempo_service
+      failed_when: tempo_service.resources | length == 0
+    
+    - name: Display Tempo deployment status
+      debug:
+        msg: |
+          ====================================
+          Tempo Deployment Complete!
+          ====================================
+          
+          Tempo is now running with the following endpoints:
+          
+          OTLP:
+          - gRPC: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4317
+          - HTTP: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4318
+          
+          Query API:
+          - HTTP: http://tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3200
+          
+          Legacy Formats:
+          - Zipkin: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:9411
+          - Jaeger Thrift: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:14268
+          - Jaeger gRPC: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:14250
+          
+          Next Steps:
+          1. Update Alloy configuration to send traces to Tempo (playbook 07)
+          2. Configure Grafana datasource for Tempo (playbook 08)
+          3. Applications can now send traces via OTLP to port 4317 (gRPC) or 4318 (HTTP)
+    
+    - name: Test Tempo health endpoint
+      uri:
+        url: "http://tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3200/ready"
+        method: GET
+        status_code: 200
+      register: tempo_health
+      retries: 5
+      delay: 10
+      until: tempo_health.status == 200
+      ignore_errors: true
+    
+    - name: Report Tempo health status
+      debug:
+        msg: "Tempo health check: {{ 'PASSED' if tempo_health.status == 200 else 'FAILED - Manual verification needed' }}"

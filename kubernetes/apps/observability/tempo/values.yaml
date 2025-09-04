@@ -1,0 +1,96 @@
+# Grafana Tempo Helm Chart Values for ArgoCD deployment
+# Distributed tracing backend with OTLP support
+
+# Global settings
+global:
+  clusterDomain: home-hk1-cluster.orbb.li
+
+tempo:
+  # Storage backend
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+  
+  # Retention settings
+  retention: 720h  # 30 days
+  
+  # Compactor configuration
+  compactor:
+    compaction:
+      block_retention: 720h
+    ring:
+      kvstore:
+        store: inmemory
+  
+  # Distributor configuration
+  distributor:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      zipkin:
+        endpoint: 0.0.0.0:9411
+      jaeger:
+        protocols:
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+          grpc:
+            endpoint: 0.0.0.0:14250
+  
+  # Query frontend configuration
+  query_frontend:
+    search:
+      max_duration: 720h
+  
+  # Server configuration
+  server:
+    http_listen_port: 3200
+    grpc_listen_port: 9095
+  
+  # Metrics generator disabled (we use Prometheus)
+  metrics_generator:
+    enabled: false
+
+# Persistence
+persistence:
+  enabled: true
+  storageClass: k8s-csi
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+
+# Single binary deployment for simplicity
+deploymentMode: SingleBinary
+
+# Resources
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+# Service
+service:
+  type: ClusterIP
+  
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+# Ingress disabled (using Tailscale)
+ingress:
+  enabled: false
+
+# Test
+test:
+  enabled: false
