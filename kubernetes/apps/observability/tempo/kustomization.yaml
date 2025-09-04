@@ -5,9 +5,9 @@ namespace: observability
 
 # Helm chart as generator
 helmCharts:
-  - name: tempo-distributed
+  - name: tempo
     repo: https://grafana.github.io/helm-charts
-    version: 1.47.1
+    version: 1.23.3
     releaseName: tempo
     namespace: observability
     valuesFile: values.yaml

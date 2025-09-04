@@ -84,9 +84,9 @@ spec:
             -s 'config."access.token.claim"=true' \
             -s 'config."claim.name"=resource_access.${client_id}.roles' \
             -s 'config."jsonType.label"=String' \
-            -s "config.\"usermodel.clientRoleMapping.clientId\"={{ oauth_client_id | default(app_name) }}"
+            -s "config.\"usermodel.clientRoleMapping.clientId\"={{ oauth_client_id | default(app_name) }}" 2>/dev/null || echo "Client roles mapper already exists"
           
-          echo "Client roles mapper created successfully"
+          echo "Client roles mapper configured successfully"
           
           # Also create realm roles mapper for admin detection
           echo "Creating realm roles protocol mapper..."

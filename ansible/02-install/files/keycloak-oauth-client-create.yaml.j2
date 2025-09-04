@@ -22,7 +22,7 @@ spec:
           
           echo "Creating OAuth client for {{ app_name }}..."
           
-          KEYCLOAK_URL="http://keycloak-service.{{ keycloak_namespace }}.svc.{{ cluster_domain | default('cluster.local') }}:8080"
+          KEYCLOAK_URL="http://keycloak-service.{{ keycloak_namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:8080"
           
           # Wait for Keycloak to be ready using kcadm
           echo "Waiting for Keycloak to be ready..."

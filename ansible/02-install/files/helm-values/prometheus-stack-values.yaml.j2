@@ -113,7 +113,7 @@ grafana:
         - name: Tempo
           type: tempo
           uid: tempo-cluster
-          url: http://{{ tempo_service | default('tempo-query-frontend') }}.{{ namespace }}.svc.{{ cluster_domain }}:3100
+          url: http://{{ tempo_service | default('tempo') }}.{{ namespace }}.svc.{{ cluster_domain }}:3100
           access: proxy
           jsonData:
             tracesToLogsV2:

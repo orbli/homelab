@@ -83,10 +83,10 @@ alloy:
         }
       }
       
-      // Export traces to Tempo Distributor
+      // Export traces to Tempo
       otelcol.exporter.otlp "tempo" {
         client {
-          endpoint = "tempo-distributor.observability.svc.home-hk1-cluster.orbb.li:4317"
+          endpoint = "tempo.observability.svc.home-hk1-cluster.orbb.li:4317"
           tls {
             insecure = true
           }

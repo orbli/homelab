@@ -1,13 +1,18 @@
-# Grafana Tempo Distributed Helm Chart Values
-# Scalable distributed tracing with OTLP support
-
-# Global settings
-global:
-  clusterDomain: home-hk1-cluster.orbb.li
+# Grafana Tempo Helm Chart Values
+# Simple single-binary deployment for distributed tracing
 
 # Tempo configuration
 tempo:
-  # Storage configuration
+  # Use single-binary mode for simpler deployment
+  reportingEnabled: false
+  
+  # Server configuration
+  server:
+    http_listen_port: 3100
+    grpc_listen_port: 9095
+    log_level: info
+    
+  # Storage configuration - local storage
   storage:
     trace:
       backend: local
@@ -15,167 +20,105 @@ tempo:
         path: /var/tempo/traces
       wal:
         path: /var/tempo/wal
+      block:
+        bloom_filter_false_positive: 0.05
+        index_downsample_bytes: 1048576
+        encoding: zstd
         
-  # Retention
-  retention: 720h  # 30 days
-  
-  # Server ports
-  server:
-    http_listen_port: 3100
-    grpc_listen_port: 9095
+  # Compactor configuration
+  compactor:
+    compaction:
+      block_retention: 720h  # 30 days
+      
+  # Distributor configuration with receivers
+  distributor:
+    receivers:
+      # OTLP receiver (OpenTelemetry)
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      # Jaeger receiver
+      jaeger:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:14250
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+      # Zipkin receiver
+      zipkin:
+        endpoint: 0.0.0.0:9411
+        
+  # Ingester configuration
+  ingester:
+    max_block_bytes: 1073741824  # 1GB
+    max_block_duration: 30m
     
-  # Limits configuration
+  # Query limits
+  query_frontend:
+    max_outstanding_per_tenant: 200
+    
+  # Overrides for rate limiting
   overrides:
+    max_bytes_per_trace: 5000000  # 5MB per trace
     max_traces_per_user: 100000
-    ingestion_rate_limit_bytes: 50000000  # 50MB/s
-    ingestion_burst_size_bytes: 100000000  # 100MB
-  
-  # Receivers configuration
-  receivers:
-    otlp:
-      protocols:
-        grpc:
-          endpoint: 0.0.0.0:4317
-        http:
-          endpoint: 0.0.0.0:4318
-    jaeger:
-      protocols:
-        grpc:
-          endpoint: 0.0.0.0:14250
-        thrift_http:
-          endpoint: 0.0.0.0:14268
-    zipkin:
-      endpoint: 0.0.0.0:9411
+    ingestion_rate_limit_bytes: 20000000  # 20MB/s
+    ingestion_burst_size_bytes: 50000000  # 50MB
 
-# Distributor - receives spans from clients
-distributor:
-  replicas: 1
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  service:
-    type: ClusterIP
-    # OTLP and other receivers ports
-    otlpGrpcPort: 4317
-    otlpHttpPort: 4318
-    zipkinPort: 9411
-    jaegerThriftHttpPort: 14268
-    jaegerGrpcPort: 14250
+# Deployment configuration
+replicas: 1
 
-# Ingester - processes and stores spans
-ingester:
-  replicas: 1
-  persistence:
-    enabled: true
-    storageClass: k8s-csi
-    size: 10Gi
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 1000m
-      memory: 1Gi
+# Resources
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
 
-# Querier - serves queries
-querier:
-  replicas: 1
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 256Mi
-
-# Query Frontend - caches and optimizes queries
-queryFrontend:
-  replicas: 1
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 256Mi
-  service:
-    type: ClusterIP
-    port: 3100  # This is what Grafana connects to
-
-# Compactor - compacts blocks and manages retention
-compactor:
-  replicas: 1
-  persistence:
-    enabled: true
-    storageClass: k8s-csi
-    size: 10Gi
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-# Metrics Generator - disabled (we use Prometheus)
-metricsGenerator:
-  enabled: false
-
-# Gateway - nginx gateway for routing
-gateway:
+# Persistence
+persistence:
   enabled: true
-  replicas: 1
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 200m
-      memory: 128Mi
-  service:
-    type: ClusterIP
-    port: 80
-    
-  # Basic auth disabled
-  basicAuth:
-    enabled: false
+  storageClassName: k8s-csi
+  size: 20Gi
+  accessMode: ReadWriteOnce
 
-# Memcached for caching
-memcached:
-  enabled: true
-  replicas: 1
-  resources:
-    requests:
-      cpu: 50m
-      memory: 128Mi
-    limits:
-      cpu: 200m
-      memory: 256Mi
+# Service configuration
+service:
+  type: ClusterIP
+  annotations: {}
 
-# Service Monitor for Prometheus scraping
+# ServiceMonitor for Prometheus metrics scraping
 serviceMonitor:
   enabled: true
   interval: 30s
 
-# Persistence for traces storage
-persistence:
-  enabled: true
-  storageClass: k8s-csi
-  size: 20Gi
-  accessModes:
-    - ReadWriteOnce
+# Tempo-query for Jaeger UI compatibility (optional)
+tempoQuery:
+  enabled: false
 
-# Tracing disabled to avoid loops
-traces:
-  otlp:
-    grpc:
-      enabled: false
-    http:
-      enabled: false
-      
-# Use single binary for simple setup (set to false for true distributed mode)
-useLegacySingleBinary: false
+# Security context
+securityContext:
+  fsGroup: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  runAsUser: 10001
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  runAsUser: 10001
+
+# Affinity rules - none needed for single replica
+affinity: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []

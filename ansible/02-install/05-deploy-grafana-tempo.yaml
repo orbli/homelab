@@ -83,7 +83,7 @@
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Service
-        name: tempo-query-frontend
+        name: tempo
         namespace: "{{ namespace }}"
       register: tempo_service
       failed_when: tempo_service.resources | length == 0
@@ -97,12 +97,12 @@
           
           Tempo is now running with the following endpoints:
           
-          OTLP (via distributor):
-          - gRPC: tempo-distributor.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4317
-          - HTTP: tempo-distributor.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4318
+          OTLP:
+          - gRPC: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4317
+          - HTTP: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4318
           
           Query API:
-          - HTTP: http://tempo-query-frontend.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3100
+          - HTTP: http://tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3100
           
           Legacy Formats:
           - Zipkin: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:9411
@@ -116,7 +116,7 @@
     
     - name: Test Tempo health endpoint
       uri:
-        url: "http://tempo-query-frontend.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3100/ready"
+        url: "http://tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3100/ready"
         method: GET
         status_code: 200
       register: tempo_health
