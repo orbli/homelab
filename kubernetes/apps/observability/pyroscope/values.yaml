@@ -1,105 +1,95 @@
 # Pyroscope configuration for continuous profiling
+# Standalone single-instance deployment
+#
+# TODO: Future enhancement - Add S3 backend using MinIO/SeaweedFS
+# See docs/TODO-s3-abstraction.md for S3 abstraction strategy
+# This would enable distributed mode and unlimited storage
+
+# Disable MinIO - using local storage for now
+minio:
+  enabled: false
+
+# Disable Alloy - will be configured in playbook 07
+alloy:
+  enabled: false
+
+# Disable Grafana Agent
+agent:
+  enabled: false
+
+# Main Pyroscope configuration
 pyroscope:
-  # Storage configuration
-  storage:
-    backend: filesystem
-    filesystem:
-      path: /data
-      
-  # Components configuration
-  components:
-    querier:
+  # Single binary mode - all components in one container
+  # This is simpler and sufficient for homelab use
+  singleBinary:
+    replicas: 1
+    persistence:
       enabled: true
-    query-frontend:
-      enabled: true
-    query-scheduler:
-      enabled: true
-    distributor:
-      enabled: true
-    ingester:
-      enabled: true
-    store-gateway:
-      enabled: true
-    compactor:
-      enabled: true
-      
-  # Configuration
-  config: |
+      size: 50Gi
+      storageClass: k8s-csi  # Using default storage class
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: 1000m
+      requests:
+        memory: 512Mi
+        cpu: 100m
+  
+  # Structured configuration for Pyroscope
+  structuredConfig:
     # Server configuration
     server:
       http_listen_port: 4040
       log_level: info
-      
-    # Distributor configuration
+    
+    # Storage configuration - filesystem for single instance
+    storage:
+      backend: filesystem
+      filesystem:
+        directory: /data
+    
+    # Distributor configuration for receiving profiles
     distributor:
-      pool:
-        health_check_ingesters: true
-        
+      ring:
+        kvstore:
+          store: inmemory
+    
     # Ingester configuration
     ingester:
       lifecycler:
         ring:
           kvstore:
-            store: memberlist
+            store: inmemory
           replication_factor: 1
-        num_tokens: 128
-        
-    # Storage configuration
-    storage:
-      backend: filesystem
-      filesystem:
-        directory: /data
-        
-    # Compactor configuration
-    compactor:
-      enabled: true
-      data_path: /data/compactor
-      
-    # Memberlist for cluster coordination
-    memberlist:
-      bind_port: 7946
-      join_members:
-        - pyroscope-memberlist:7946
-        
-    # Limits configuration
+    
+    # Query limits
     limits:
-      enforce_metric_name: false
-      max_query_lookback: 720h
-      max_query_length: 720h
-      
-# Single binary deployment for simplicity (similar to Tempo setup)
-singleBinary:
-  enabled: true
-  replicas: 1
-  persistence:
-    enabled: true
-    size: 50Gi
-    storageClass: k8s-csi
-  resources:
-    limits:
-      memory: 2Gi
-      cpu: 1000m
-    requests:
-      memory: 512Mi
-      cpu: 100m
-      
+      max_query_lookback: 720h  # 30 days
+      max_query_length: 720h    # 30 days
+      max_query_parallelism: 30
+      max_flamegraph_nodes_default: 16000
+      max_nodes_render: 16000
+    
+    # Analytics
+    analytics:
+      reporting_enabled: false
+
 # Service configuration
 service:
   type: ClusterIP
   port: 4040
-  
-# Ingester service for receiving profiles
-ingester:
-  service:
-    type: ClusterIP
-    
-# Enable self-monitoring
-selfMonitoring:
-  enabled: true
-  grafanaAgent:
-    enabled: false  # We're using Alloy instead
-    
-# Pod annotations for profile collection by Alloy
+  targetPort: 4040
+  annotations: {}
+
+# ServiceMonitor for Prometheus scraping (if needed)
+serviceMonitor:
+  enabled: false
+
+# Ingress configuration (disabled for homelab with Tailscale)
+ingress:
+  enabled: false
+
+# Pod annotations for profile collection by Alloy (when configured)
 podAnnotations:
   profiles.grafana.com/memory.scrape: "true"
   profiles.grafana.com/memory.port: "4040"
