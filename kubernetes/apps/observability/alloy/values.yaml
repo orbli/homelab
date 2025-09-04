@@ -94,17 +94,11 @@ alloy:
       }
       
       // ====== PROFILE COLLECTION FOR PYROSCOPE ======
-      // Discover pods for profiling
-      discovery.kubernetes "profile_pods" {
-        role = "pod"
-        namespaces {
-          own_namespace = false
-        }
-      }
+      // Use the same pod discovery from above for profiles
       
       // Filter pods with profile annotations
       discovery.relabel "profile_pods" {
-        targets = discovery.kubernetes.profile_pods.targets
+        targets = discovery.kubernetes.pods.targets
         
         // Keep pods with CPU profiling enabled
         rule {
@@ -155,7 +149,7 @@ alloy:
       
       // Discover pods for memory profiling
       discovery.relabel "memory_pods" {
-        targets = discovery.kubernetes.profile_pods.targets
+        targets = discovery.kubernetes.pods.targets
         
         // Keep pods with memory profiling enabled
         rule {
@@ -198,7 +192,7 @@ alloy:
       
       // Discover pods for goroutine profiling
       discovery.relabel "goroutine_pods" {
-        targets = discovery.kubernetes.profile_pods.targets
+        targets = discovery.kubernetes.pods.targets
         
         // Keep pods with goroutine profiling enabled
         rule {
