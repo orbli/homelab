@@ -30,15 +30,6 @@ pyroscope:
     size: 50Gi
     storageClassName: k8s-csi
   
-  # Resource limits
-  resources:
-    limits:
-      memory: 2Gi
-      cpu: 1000m
-    requests:
-      memory: 512Mi
-      cpu: 100m
-  
   # Pod annotations for profile collection by Alloy (when configured in playbook 07)
   podAnnotations:
     profiles.grafana.com/memory.scrape: "true"
