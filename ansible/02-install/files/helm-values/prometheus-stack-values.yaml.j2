@@ -137,6 +137,13 @@ grafana:
               hide: false
             lokiSearch:
               datasourceUid: loki-cluster
+        - name: Pyroscope
+          type: grafana-pyroscope-datasource
+          uid: pyroscope-cluster
+          url: http://{{ pyroscope_service | default('pyroscope') }}.{{ namespace }}.svc.{{ cluster_domain }}:4040
+          access: proxy
+          jsonData:
+            profileTypeID: "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
   
   # Grafana.ini configuration
   grafana.ini:

@@ -92,6 +92,71 @@ alloy:
           }
         }
       }
+      
+      // Profile collection discovery
+      discovery.kubernetes "pods" {
+        role = "pod"
+        namespaces {
+          own_namespace = false
+        }
+      }
+      
+      // Scrape profiles from pods with annotations
+      discovery.relabel "profile_pods" {
+        targets = discovery.kubernetes.pods.targets
+        
+        // Only keep pods with profile annotations
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_cpu_scrape"]
+          regex = "true"
+          action = "keep"
+        }
+        
+        // Set the profile port
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_cpu_port"]
+          target_label = "__profile_port__"
+        }
+        
+        // Set pod labels
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label = "pod"
+        }
+      }
+      
+      // Collect profiles and send to Pyroscope
+      pyroscope.scrape "kubernetes" {
+        targets = discovery.relabel.profile_pods.output
+        
+        profiling_config {
+          profile.process_cpu {
+            enabled = true
+            path = "/debug/pprof/profile"
+          }
+          profile.memory {
+            enabled = true
+            path = "/debug/pprof/heap"  
+          }
+          profile.goroutine {
+            enabled = true
+            path = "/debug/pprof/goroutine"
+          }
+        }
+        
+        forward_to = [pyroscope.write.profiles.receiver]
+      }
+      
+      // Write profiles to Pyroscope
+      pyroscope.write "profiles" {
+        endpoint {
+          url = "http://pyroscope.observability.svc.home-hk1-cluster.orbb.li:4040"
+        }
+      }
 
 # Deployment configuration
 controller:

@@ -1,0 +1,109 @@
+# Pyroscope configuration for continuous profiling
+pyroscope:
+  # Storage configuration
+  storage:
+    backend: filesystem
+    filesystem:
+      path: /data
+      
+  # Components configuration
+  components:
+    querier:
+      enabled: true
+    query-frontend:
+      enabled: true
+    query-scheduler:
+      enabled: true
+    distributor:
+      enabled: true
+    ingester:
+      enabled: true
+    store-gateway:
+      enabled: true
+    compactor:
+      enabled: true
+      
+  # Configuration
+  config: |
+    # Server configuration
+    server:
+      http_listen_port: 4040
+      log_level: info
+      
+    # Distributor configuration
+    distributor:
+      pool:
+        health_check_ingesters: true
+        
+    # Ingester configuration
+    ingester:
+      lifecycler:
+        ring:
+          kvstore:
+            store: memberlist
+          replication_factor: 1
+        num_tokens: 128
+        
+    # Storage configuration
+    storage:
+      backend: filesystem
+      filesystem:
+        directory: /data
+        
+    # Compactor configuration
+    compactor:
+      enabled: true
+      data_path: /data/compactor
+      
+    # Memberlist for cluster coordination
+    memberlist:
+      bind_port: 7946
+      join_members:
+        - pyroscope-memberlist:7946
+        
+    # Limits configuration
+    limits:
+      enforce_metric_name: false
+      max_query_lookback: 720h
+      max_query_length: 720h
+      
+# Single binary deployment for simplicity (similar to Tempo setup)
+singleBinary:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: k8s-csi
+  resources:
+    limits:
+      memory: 2Gi
+      cpu: 1000m
+    requests:
+      memory: 512Mi
+      cpu: 100m
+      
+# Service configuration
+service:
+  type: ClusterIP
+  port: 4040
+  
+# Ingester service for receiving profiles
+ingester:
+  service:
+    type: ClusterIP
+    
+# Enable self-monitoring
+selfMonitoring:
+  enabled: true
+  grafanaAgent:
+    enabled: false  # We're using Alloy instead
+    
+# Pod annotations for profile collection by Alloy
+podAnnotations:
+  profiles.grafana.com/memory.scrape: "true"
+  profiles.grafana.com/memory.port: "4040"
+  profiles.grafana.com/cpu.scrape: "true"
+  profiles.grafana.com/cpu.port: "4040"
+  profiles.grafana.com/goroutine.scrape: "true"
+  profiles.grafana.com/goroutine.port: "4040"
