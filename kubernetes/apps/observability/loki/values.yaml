@@ -135,11 +135,5 @@ networkPolicy:
   enabled: false
 
 # Loki Canary - test tool that writes and reads logs to verify Loki is working
-# NOTE: We'll patch this after deployment due to Helm chart limitations
 lokiCanary:
-  enabled: true
-  args:
-    - -addr=loki.observability.svc.home-hk1-cluster.orbb.li:3100
-    - -labelname=pod
-    - -labelvalue=$(POD_NAME)
-    - -push=true
+  enabled: false

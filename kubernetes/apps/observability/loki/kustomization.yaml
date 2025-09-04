@@ -12,7 +12,3 @@ helmCharts:
   releaseName: loki
   namespace: observability
   valuesFile: values.yaml
-
-# Additional resources (post-sync hook to patch loki-canary)
-resources:
-- patch-loki-canary.yaml
