@@ -29,7 +29,7 @@
     
     - name: Deploy observability namespace via ArgoCD if not exists
       shell: |
-        kubectl apply -f /home/eli/workbench/homelab/kubernetes/apps/observability/apps/namespace-app.yaml
+        kubectl apply -f /home/eli/workbench/homelab/kubernetes/argocd/observability-namespace/observability-namespace-app.yaml
       when: namespace_app_check.resources | length == 0
       register: namespace_app
       changed_when: "'configured' in namespace_app.stdout or 'created' in namespace_app.stdout"
@@ -53,7 +53,7 @@
     
     - name: Deploy Pyroscope ArgoCD Application
       shell: |
-        kubectl apply -f /home/eli/workbench/homelab/kubernetes/apps/observability/apps/pyroscope-app.yaml
+        kubectl apply -f /home/eli/workbench/homelab/kubernetes/argocd/pyroscope/pyroscope-app.yaml
       register: pyroscope_app
       changed_when: "'configured' in pyroscope_app.stdout or 'created' in pyroscope_app.stdout"
     

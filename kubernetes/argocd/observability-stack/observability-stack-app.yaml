@@ -16,7 +16,7 @@ spec:
   source:
     repoURL: https://github.com/orbli/homelab.git
     targetRevision: master
-    path: kubernetes/apps/observability/apps
+    path: kubernetes/argocd/observability-stack
     kustomize: {}
   
   destination:

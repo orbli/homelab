@@ -1,33 +1,29 @@
-# This Application manages ArgoCD Core itself (self-hosting)
-# Uses official ArgoCD Core manifest with Kustomize for version management
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: argocd-self-host
+  name: keycloak-operator
   namespace: gitops
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
 spec:
   project: default
-  
   source:
     repoURL: https://github.com/orbli/homelab.git
     targetRevision: master
-    path: kubernetes/apps/argocd
-    # Using Kustomize to manage ArgoCD Core
+    path: kubernetes/manifests/keycloak
     kustomize: {}
-  
   destination:
     server: https://kubernetes.default.svc
-    namespace: gitops
-  
+    namespace: iam
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=false  # Namespace already exists
+      - CreateNamespace=false  # Namespace created by keycloak-namespace app
       - ServerSideApply=true
       - PrunePropagationPolicy=foreground
       - RespectIgnoreDifferences=true
@@ -37,14 +33,9 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-  
-  # Ignore differences that are expected in self-hosted ArgoCD
   ignoreDifferences:
-  - group: apps
-    kind: Deployment
+  # Ignore secret data as it's managed by Ansible
+  - group: ""
+    kind: Secret
     jsonPointers:
-    - /spec/replicas
-  - group: apps
-    kind: StatefulSet
-    jsonPointers:
-    - /spec/replicas
+    - /data

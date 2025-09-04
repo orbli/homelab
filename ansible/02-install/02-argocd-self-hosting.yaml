@@ -12,8 +12,8 @@
     namespace: gitops
     git_repo: https://github.com/orbli/homelab.git
     git_branch: master
-    argocd_apps_path: kubernetes/gitops/apps
-    argocd_resources_path: kubernetes/apps/argocd
+    argocd_apps_path: kubernetes/argocd/argocd
+    argocd_resources_path: kubernetes/manifests/argocd
     
   tasks:
     - name: Verify ArgoCD is running

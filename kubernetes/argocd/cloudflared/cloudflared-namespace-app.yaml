@@ -1,35 +1,34 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: observability-loki
+  name: cloudflared-namespace
   namespace: gitops
   labels:
-    app.kubernetes.io/name: loki
-    app.kubernetes.io/part-of: observability
+    app.kubernetes.io/name: cloudflared-namespace
+    app.kubernetes.io/part-of: ingress
   annotations:
-    argocd.argoproj.io/sync-wave: "20"  # After namespace
+    argocd.argoproj.io/sync-wave: "30"  # After Keycloak
 spec:
   project: default
   
   source:
     repoURL: https://github.com/orbli/homelab.git
     targetRevision: master
-    path: kubernetes/apps/observability/loki
+    path: kubernetes/manifests/cloudflared
     kustomize: {}
   
   destination:
     server: https://kubernetes.default.svc
-    namespace: observability
+    namespace: ingress
   
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-    - CreateNamespace=false  # Namespace should already exist
-    - ServerSideApply=true   # Use server-side apply for CRDs
+    - CreateNamespace=true
     retry:
-      limit: 5
+      limit: 3
       backoff:
         duration: 5s
         factor: 2

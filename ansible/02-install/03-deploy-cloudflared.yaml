@@ -18,7 +18,7 @@
     namespace: ingress
     gitops_namespace: gitops
     tunnel_credentials_path: "../secrets/tunnel-credentials.json"
-    argocd_apps_path: "../../kubernetes/gitops/apps"
+    argocd_apps_path: "../../kubernetes/argocd/cloudflared"
     
   tasks:
     # Pre-deployment checks

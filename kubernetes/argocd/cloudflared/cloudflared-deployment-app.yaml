@@ -1,31 +1,34 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: keycloak-namespace
+  name: cloudflared-deployment
   namespace: gitops
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/name: cloudflared-deployment
+    app.kubernetes.io/part-of: ingress
   annotations:
-    argocd.argoproj.io/sync-wave: "10"  # Create namespace first
+    argocd.argoproj.io/sync-wave: "40"  # After namespace and secrets
 spec:
   project: default
+  
   source:
     repoURL: https://github.com/orbli/homelab.git
     targetRevision: master
-    path: kubernetes/apps/iam/namespace
+    path: kubernetes/manifests/cloudflared
     kustomize: {}
+  
   destination:
     server: https://kubernetes.default.svc
-    namespace: iam
+    namespace: ingress
+  
   syncPolicy:
     automated:
       prune: true
-      selfHeal: true  # Namespace can be self-healed safely
+      selfHeal: false  # Don't auto-heal as deployment depends on external secret
     syncOptions:
-      - CreateNamespace=false  # We're creating it explicitly
-      - ServerSideApply=true
+    - CreateNamespace=false  # Namespace should already exist
     retry:
-      limit: 5
+      limit: 3
       backoff:
         duration: 5s
         factor: 2

@@ -18,7 +18,7 @@
     namespace: iam
     gitops_namespace: gitops
     secrets_file: "../secrets/keycloak-secrets.yaml"
-    argocd_apps_path: "../../kubernetes/gitops/apps"
+    argocd_apps_path: "../../kubernetes/argocd/keycloak"
     
   tasks:
     # Pre-deployment checks

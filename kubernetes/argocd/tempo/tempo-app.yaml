@@ -1,36 +1,31 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: observability-alloy
+  name: observability-tempo
   namespace: gitops
-  labels:
-    app.kubernetes.io/name: alloy
-    app.kubernetes.io/part-of: observability
-  annotations:
-    argocd.argoproj.io/sync-wave: "30"  # After Loki
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  
   source:
     repoURL: https://github.com/orbli/homelab.git
     targetRevision: master
-    path: kubernetes/apps/observability/alloy
-    kustomize: {}
-  
+    path: kubernetes/manifests/tempo
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
-  
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+      allowEmpty: false
     syncOptions:
-    - CreateNamespace=false  # Namespace should already exist
-    - ServerSideApply=true   # Use server-side apply for CRDs
+      - CreateNamespace=false  # Namespace created by separate app
+      - ServerSideApply=true
     retry:
       limit: 5
       backoff:
         duration: 5s
         factor: 2
         maxDuration: 3m
+  revisionHistoryLimit: 3

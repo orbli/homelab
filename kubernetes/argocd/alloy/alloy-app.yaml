@@ -1,34 +1,35 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cloudflared-deployment
+  name: observability-alloy
   namespace: gitops
   labels:
-    app.kubernetes.io/name: cloudflared-deployment
-    app.kubernetes.io/part-of: ingress
+    app.kubernetes.io/name: alloy
+    app.kubernetes.io/part-of: observability
   annotations:
-    argocd.argoproj.io/sync-wave: "40"  # After namespace and secrets
+    argocd.argoproj.io/sync-wave: "30"  # After Loki
 spec:
   project: default
   
   source:
     repoURL: https://github.com/orbli/homelab.git
     targetRevision: master
-    path: kubernetes/apps/cloudflared/deployment
+    path: kubernetes/manifests/alloy
     kustomize: {}
   
   destination:
     server: https://kubernetes.default.svc
-    namespace: ingress
+    namespace: observability
   
   syncPolicy:
     automated:
       prune: true
-      selfHeal: false  # Don't auto-heal as deployment depends on external secret
+      selfHeal: true
     syncOptions:
     - CreateNamespace=false  # Namespace should already exist
+    - ServerSideApply=true   # Use server-side apply for CRDs
     retry:
-      limit: 3
+      limit: 5
       backoff:
         duration: 5s
         factor: 2

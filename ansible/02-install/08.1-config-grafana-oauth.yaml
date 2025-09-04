@@ -43,7 +43,7 @@
     
     - name: Deploy observability namespace via ArgoCD if not exists
       shell: |
-        kubectl apply -f /home/eli/workbench/homelab/kubernetes/apps/observability/apps/namespace-app.yaml
+        kubectl apply -f /home/eli/workbench/homelab/kubernetes/argocd/observability-namespace/observability-namespace-app.yaml
       register: namespace_app
       when: namespace_app_check.resources | length == 0
       changed_when: "'configured' in namespace_app.stdout or 'created' in namespace_app.stdout"

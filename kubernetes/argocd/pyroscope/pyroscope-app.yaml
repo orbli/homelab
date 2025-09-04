@@ -1,18 +1,18 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: observability-namespace
+  name: observability-pyroscope
   namespace: gitops
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   annotations:
-    argocd.argoproj.io/sync-wave: "-30"  # Namespace first
+    argocd.argoproj.io/sync-wave: "25"  # After Tempo (20) but before Alloy (30)
 spec:
   project: default
   source:
     repoURL: https://github.com/orbli/homelab.git
     targetRevision: master
-    path: kubernetes/apps/observability/namespace
+    path: kubernetes/manifests/pyroscope
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
@@ -20,6 +20,14 @@ spec:
     automated:
       prune: true
       selfHeal: true
+      allowEmpty: false
     syncOptions:
-      - CreateNamespace=false  # Namespace creates itself
-      - ApplyOutOfSyncOnly=true
+      - CreateNamespace=false  # Namespace created by separate app
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 3

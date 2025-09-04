@@ -7,7 +7,7 @@
   vars:
     namespace: observability
     gitops_namespace: gitops
-    argocd_apps_path: "../../kubernetes/gitops/apps"
+    argocd_apps_path: "../../kubernetes/argocd/observability-stack"
     
   tasks:
     - name: Ensure ArgoCD is running
@@ -43,7 +43,7 @@
     
     - name: Apply Observability Stack App of Apps
       shell: |
-        kubectl apply -f /home/eli/workbench/homelab/kubernetes/gitops/apps/observability-stack-app.yaml
+        kubectl apply -f /home/eli/workbench/homelab/kubernetes/argocd/observability-stack/observability-stack-app.yaml
       register: stack_app
       changed_when: "'configured' in stack_app.stdout or 'created' in stack_app.stdout"
     

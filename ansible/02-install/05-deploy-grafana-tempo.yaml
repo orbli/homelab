@@ -28,7 +28,7 @@
     
     - name: Deploy observability namespace via ArgoCD if not exists
       shell: |
-        kubectl apply -f ../../kubernetes/gitops/apps/observability-namespace-app.yaml
+        kubectl apply -f ../../kubernetes/argocd/observability-namespace/observability-namespace-app.yaml
       when: namespace_app_check.resources | length == 0
       register: namespace_app
       changed_when: "'configured' in namespace_app.stdout or 'created' in namespace_app.stdout"
@@ -52,7 +52,7 @@
     
     - name: Deploy Tempo ArgoCD Application
       shell: |
-        kubectl apply -f /home/eli/workbench/homelab/kubernetes/apps/observability/apps/tempo-app.yaml
+        kubectl apply -f /home/eli/workbench/homelab/kubernetes/argocd/tempo/tempo-app.yaml
       register: tempo_app
       changed_when: "'configured' in tempo_app.stdout or 'created' in tempo_app.stdout"
     
