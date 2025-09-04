@@ -12,7 +12,7 @@
     namespace: gitops
     git_repo: https://github.com/orbli/homelab.git
     git_branch: master
-    kustomize_path: kubernetes/apps/argocd
+    kustomize_path: kubernetes/manifests/argocd
     
   tasks:
     # Namespace is now created via Kustomize in kubernetes/apps/argocd/namespace.yaml
