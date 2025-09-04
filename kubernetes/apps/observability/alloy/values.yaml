@@ -96,20 +96,21 @@ alloy:
       // ====== PROFILE COLLECTION FOR PYROSCOPE ======
       // Use the same pod discovery from above for profiles
       
-      // Filter pods with profile annotations
+      // Filter pods with any profile annotations
       discovery.relabel "profile_pods" {
         targets = discovery.kubernetes.pods.targets
         
-        // Keep pods with CPU profiling enabled
+        // Keep pods with any profile annotation
+        // We'll look for memory scrape as the primary indicator
         rule {
-          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_cpu_scrape"]
+          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_memory_scrape"]
           regex = "true"
           action = "keep"
         }
         
         // Set the address using pod IP and port from annotation
         rule {
-          source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_annotation_profiles_grafana_com_cpu_port"]
+          source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_annotation_profiles_grafana_com_memory_port"]
           separator = ":"
           target_label = "__address__"
         }
@@ -133,100 +134,35 @@ alloy:
         }
       }
       
-      // Scrape CPU profiles
-      pyroscope.scrape "cpu" {
+      // Single scraper for all profile types
+      pyroscope.scrape "kubernetes_pods" {
         targets = discovery.relabel.profile_pods.output
         
         profiling_config {
-          profile.process_cpu {
-            enabled = true
-            path = "/debug/pprof/profile"
-          }
-        }
-        
-        forward_to = [pyroscope.write.profiles.receiver]
-      }
-      
-      // Discover pods for memory profiling
-      discovery.relabel "memory_pods" {
-        targets = discovery.kubernetes.pods.targets
-        
-        // Keep pods with memory profiling enabled
-        rule {
-          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_memory_scrape"]
-          regex = "true"
-          action = "keep"
-        }
-        
-        // Set the address
-        rule {
-          source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_annotation_profiles_grafana_com_memory_port"]
-          separator = ":"
-          target_label = "__address__"
-        }
-        
-        // Add metadata labels
-        rule {
-          source_labels = ["__meta_kubernetes_namespace"]
-          target_label = "namespace"
-        }
-        rule {
-          source_labels = ["__meta_kubernetes_pod_name"]
-          target_label = "pod"
-        }
-      }
-      
-      // Scrape memory profiles
-      pyroscope.scrape "memory" {
-        targets = discovery.relabel.memory_pods.output
-        
-        profiling_config {
+          // Memory profiling (heap)
           profile.memory {
             enabled = true
             path = "/debug/pprof/heap"
           }
-        }
-        
-        forward_to = [pyroscope.write.profiles.receiver]
-      }
-      
-      // Discover pods for goroutine profiling
-      discovery.relabel "goroutine_pods" {
-        targets = discovery.kubernetes.pods.targets
-        
-        // Keep pods with goroutine profiling enabled
-        rule {
-          source_labels = ["__meta_kubernetes_pod_annotation_profiles_grafana_com_goroutine_scrape"]
-          regex = "true"
-          action = "keep"
-        }
-        
-        // Set the address
-        rule {
-          source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_annotation_profiles_grafana_com_goroutine_port"]
-          separator = ":"
-          target_label = "__address__"
-        }
-        
-        // Add metadata labels
-        rule {
-          source_labels = ["__meta_kubernetes_namespace"]
-          target_label = "namespace"
-        }
-        rule {
-          source_labels = ["__meta_kubernetes_pod_name"]
-          target_label = "pod"
-        }
-      }
-      
-      // Scrape goroutine profiles
-      pyroscope.scrape "goroutine" {
-        targets = discovery.relabel.goroutine_pods.output
-        
-        profiling_config {
+          // Goroutine profiling
           profile.goroutine {
             enabled = true
             path = "/debug/pprof/goroutine"
+          }
+          // Mutex contention profiling
+          profile.mutex {
+            enabled = true
+            path = "/debug/pprof/mutex"
+          }
+          // Block profiling  
+          profile.block {
+            enabled = true
+            path = "/debug/pprof/block"
+          }
+          // CPU profiling (this one actually blocks during collection)
+          profile.process_cpu {
+            enabled = true
+            path = "/debug/pprof/profile"
           }
         }
         
