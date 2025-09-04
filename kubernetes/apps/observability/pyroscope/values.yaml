@@ -46,10 +46,7 @@ pyroscope:
   # This gets merged with the default config
   structuredConfig:
     # Storage - using filesystem for single instance
-    storage:
-      backend: filesystem
-      filesystem:
-        path: /data
+    # Default filesystem backend uses /data directory
     
     # Server configuration
     server:
