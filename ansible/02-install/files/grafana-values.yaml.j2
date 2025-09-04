@@ -32,6 +32,7 @@ grafana:
       datasources:
         - name: Prometheus
           type: prometheus
+          uid: prometheus.cluster
           url: http://prometheus-kube-prometheus-prometheus.observability.svc.home-hk1-cluster.orbb.li:9090
           access: proxy
           isDefault: true
@@ -39,6 +40,7 @@ grafana:
             timeInterval: "30s"
         - name: Loki
           type: loki
+          uid: loki.cluster
           url: http://loki.observability.svc.home-hk1-cluster.orbb.li:3100
           access: proxy
           jsonData:
@@ -53,7 +55,7 @@ grafana:
           access: proxy
           jsonData:
             tracesToLogsV2:
-              datasourceUid: loki
+              datasourceUid: loki.cluster
               spanStartTimeShift: "-1h"
               spanEndTimeShift: "1h"
               tags:
@@ -62,17 +64,17 @@ grafana:
               filterByTraceID: true
               filterBySpanID: false
             tracesToMetrics:
-              datasourceUid: Prometheus
+              datasourceUid: prometheus.cluster
               spanStartTimeShift: "-1h"
               spanEndTimeShift: "1h"
             serviceMap:
-              datasourceUid: Prometheus
+              datasourceUid: prometheus.cluster
             nodeGraph:
               enabled: true
             search:
               hide: false
             lokiSearch:
-              datasourceUid: Loki
+              datasourceUid: loki.cluster
   
   # Grafana.ini configuration
   grafana.ini:
