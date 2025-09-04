@@ -7,7 +7,7 @@
   vars:
     namespace: observability
     release_name: prometheus
-    chart_version: "69.2.0"
+    chart_version: "77.5.0"
     
     # Storage configuration
     storage_class: k8s-csi

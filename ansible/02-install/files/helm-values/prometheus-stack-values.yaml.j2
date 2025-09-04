@@ -92,6 +92,7 @@ grafana:
       datasources:
         - name: Prometheus
           type: prometheus
+          uid: prometheus-cluster
           url: http://{{ release_name }}-kube-prometheus-prometheus:9090
           access: proxy
           isDefault: true
@@ -99,21 +100,24 @@ grafana:
             timeInterval: "30s"
         - name: Loki
           type: loki
+          uid: loki-cluster
           url: http://{{ loki_service }}.{{ namespace }}.svc.{{ cluster_domain }}:3100
           access: proxy
           jsonData:
             maxLines: 1000
         - name: AlertManager
           type: alertmanager
+          uid: alertmanager-cluster
           url: http://{{ release_name }}-kube-prometheus-alertmanager:9093
           access: proxy
         - name: Tempo
           type: tempo
+          uid: tempo-cluster
           url: http://{{ tempo_service | default('tempo-query-frontend') }}.{{ namespace }}.svc.{{ cluster_domain }}:3100
           access: proxy
           jsonData:
             tracesToLogsV2:
-              datasourceUid: loki
+              datasourceUid: loki-cluster
               spanStartTimeShift: "-1h"
               spanEndTimeShift: "1h"
               tags:
@@ -122,17 +126,17 @@ grafana:
               filterByTraceID: true
               filterBySpanID: false
             tracesToMetrics:
-              datasourceUid: prometheus
+              datasourceUid: prometheus-cluster
               spanStartTimeShift: "-1h"
               spanEndTimeShift: "1h"
             serviceMap:
-              datasourceUid: prometheus
+              datasourceUid: prometheus-cluster
             nodeGraph:
               enabled: true
             search:
               hide: false
             lokiSearch:
-              datasourceUid: loki
+              datasourceUid: loki-cluster
   
   # Grafana.ini configuration
   grafana.ini:

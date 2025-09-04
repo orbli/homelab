@@ -167,10 +167,7 @@
           - Client roles: grafana-admin, grafana-editor, grafana-viewer
           - Realm admin users get Grafana Admin automatically
     
-    - name: Create Grafana values file
-      copy:
-        dest: /tmp/grafana-values.yaml
-        content: "{{ lookup('template', 'files/grafana-values.yaml.j2') }}"
+    # Note: Grafana values file task removed - using kube-prometheus-stack instead
     
     - name: Display next steps
       debug:

@@ -34,17 +34,13 @@
       changed_when: "'configured' in namespace_app.stdout or 'created' in namespace_app.stdout"
     
     - name: Wait for namespace ArgoCD app to sync
-      kubernetes.core.k8s_info:
-        api_version: argoproj.io/v1alpha1
-        kind: Application
-        name: observability-namespace
-        namespace: gitops
-      register: namespace_app_status
-      until: 
-        - namespace_app_status.resources | length > 0
-        - namespace_app_status.resources[0].status.sync.status == "Synced"
-      retries: 30
-      delay: 5
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait observability-namespace \
+          --timeout 60 \
+          --health \
+          --sync
+      register: namespace_sync
+      changed_when: false
     
     - name: Verify namespace exists
       kubernetes.core.k8s_info:
@@ -56,7 +52,7 @@
     
     - name: Deploy Tempo ArgoCD Application
       shell: |
-        kubectl apply -f ../../kubernetes/apps/observability/apps/tempo-app.yaml
+        kubectl apply -f /home/eli/workbench/homelab/kubernetes/apps/observability/apps/tempo-app.yaml
       register: tempo_app
       changed_when: "'configured' in tempo_app.stdout or 'created' in tempo_app.stdout"
     
@@ -87,7 +83,7 @@
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Service
-        name: tempo
+        name: tempo-query-frontend
         namespace: "{{ namespace }}"
       register: tempo_service
       failed_when: tempo_service.resources | length == 0
@@ -101,12 +97,12 @@
           
           Tempo is now running with the following endpoints:
           
-          OTLP:
-          - gRPC: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4317
-          - HTTP: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4318
+          OTLP (via distributor):
+          - gRPC: tempo-distributor.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4317
+          - HTTP: tempo-distributor.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4318
           
           Query API:
-          - HTTP: http://tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3200
+          - HTTP: http://tempo-query-frontend.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3100
           
           Legacy Formats:
           - Zipkin: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:9411
@@ -120,7 +116,7 @@
     
     - name: Test Tempo health endpoint
       uri:
-        url: "http://tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3200/ready"
+        url: "http://tempo-query-frontend.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3100/ready"
         method: GET
         status_code: 200
       register: tempo_health
