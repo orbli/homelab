@@ -13,87 +13,68 @@ minio:
 alloy:
   enabled: false
 
-# Disable Grafana Agent
+# Disable Grafana Agent (legacy, replaced by Alloy)
 agent:
   enabled: false
 
 # Main Pyroscope configuration
 pyroscope:
-  # Single binary mode - all components in one container
-  # This is simpler and sufficient for homelab use
-  singleBinary:
-    replicas: 1
-    persistence:
-      enabled: true
-      size: 50Gi
-      storageClass: k8s-csi  # Using default storage class
-    resources:
-      limits:
-        memory: 2Gi
-        cpu: 1000m
-      requests:
-        memory: 512Mi
-        cpu: 100m
+  # Single replica for homelab
+  replicaCount: 1
   
-  # Structured configuration for Pyroscope
+  # Persistence configuration
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 50Gi
+    storageClassName: k8s-csi
+  
+  # Resource limits
+  resources:
+    limits:
+      memory: 2Gi
+      cpu: 1000m
+    requests:
+      memory: 512Mi
+      cpu: 100m
+  
+  # Pod annotations for profile collection by Alloy (when configured in playbook 07)
+  podAnnotations:
+    profiles.grafana.com/memory.scrape: "true"
+    profiles.grafana.com/memory.port: "4040"
+    profiles.grafana.com/cpu.scrape: "true"
+    profiles.grafana.com/cpu.port: "4040"
+    profiles.grafana.com/goroutine.scrape: "true"
+    profiles.grafana.com/goroutine.port: "4040"
+  
+  # Pyroscope configuration using structuredConfig
+  # This gets merged with the default config
   structuredConfig:
-    # Server configuration
-    server:
-      http_listen_port: 4040
-      log_level: info
-    
-    # Storage configuration - filesystem for single instance
+    # Storage - using filesystem for single instance
     storage:
       backend: filesystem
       filesystem:
         directory: /data
     
-    # Distributor configuration for receiving profiles
-    distributor:
-      ring:
-        kvstore:
-          store: inmemory
-    
-    # Ingester configuration
-    ingester:
-      lifecycler:
-        ring:
-          kvstore:
-            store: inmemory
-          replication_factor: 1
+    # Server configuration
+    server:
+      http_listen_port: 4040
+      log_level: info
     
     # Query limits
     limits:
       max_query_lookback: 720h  # 30 days
       max_query_length: 720h    # 30 days
-      max_query_parallelism: 30
-      max_flamegraph_nodes_default: 16000
-      max_nodes_render: 16000
     
-    # Analytics
+    # Disable analytics reporting
     analytics:
       reporting_enabled: false
 
-# Service configuration
-service:
-  type: ClusterIP
-  port: 4040
-  targetPort: 4040
-  annotations: {}
-
-# ServiceMonitor for Prometheus scraping (if needed)
+# ServiceMonitor for Prometheus scraping (if needed later)
 serviceMonitor:
   enabled: false
 
-# Ingress configuration (disabled for homelab with Tailscale)
+# Ingress disabled (using Tailscale for access)
 ingress:
   enabled: false
-
-# Pod annotations for profile collection by Alloy (when configured)
-podAnnotations:
-  profiles.grafana.com/memory.scrape: "true"
-  profiles.grafana.com/memory.port: "4040"
-  profiles.grafana.com/cpu.scrape: "true"
-  profiles.grafana.com/cpu.port: "4040"
-  profiles.grafana.com/goroutine.scrape: "true"
-  profiles.grafana.com/goroutine.port: "4040"
