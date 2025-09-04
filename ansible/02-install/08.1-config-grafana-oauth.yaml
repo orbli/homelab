@@ -84,54 +84,70 @@
         keycloak_admin_password: "{{ keycloak_admin_secret.resources[0].data.password | b64decode }}"
       no_log: true
     
-    - name: Check for existing OAuth client creation job
+    - name: Check if OAuth client secret already exists
       kubernetes.core.k8s_info:
-        api_version: batch/v1
-        kind: Job
-        name: "{{ app_name }}-keycloak-oauth-create"
+        api_version: v1
+        kind: Secret
+        name: "{{ oauth_secret_name }}"
         namespace: "{{ namespace }}"
-      register: existing_oauth_job
+      register: existing_oauth_secret
     
-    - name: Delete existing OAuth client creation job if present
-      shell: |
-        kubectl delete job {{ app_name }}-keycloak-oauth-create -n {{ namespace }}
-      when: existing_oauth_job.resources | length > 0
-      register: delete_oauth_job
-      changed_when: true
+    - name: Skip OAuth client creation if secret exists
+      debug:
+        msg: "OAuth client secret already exists, skipping client creation"
+      when: existing_oauth_secret.resources | length > 0
     
-    - name: Generate OAuth client creation manifest
-      template:
-        src: files/keycloak-oauth-client-create.yaml.j2
-        dest: /tmp/grafana-oauth-client-create.yaml
-        mode: '0644'
-    
-    - name: Apply OAuth client creation job
-      shell: |
-        kubectl apply -f /tmp/grafana-oauth-client-create.yaml
-      register: apply_oauth_job
-      changed_when: "'configured' in apply_oauth_job.stdout or 'created' in apply_oauth_job.stdout"
-    
-    - name: Wait for OAuth client creation job to complete
-      kubernetes.core.k8s_info:
-        api_version: batch/v1
-        kind: Job
-        name: "{{ app_name }}-keycloak-oauth-create"
-        namespace: "{{ namespace }}"
-      register: oauth_job
-      until: 
-        - oauth_job.resources | length > 0
-        - oauth_job.resources[0].status.completionTime is defined or 
-          (oauth_job.resources[0].status.failed is defined and oauth_job.resources[0].status.failed > 0)
-      retries: 60
-      delay: 5
-    
-    - name: Check if OAuth client creation job succeeded
-      fail:
-        msg: "OAuth client creation job failed. Check logs with: kubectl logs -n {{ namespace }} job/{{ app_name }}-keycloak-oauth-create"
-      when:
-        - oauth_job.resources | length > 0
-        - oauth_job.resources[0].status.failed is defined
-        - oauth_job.resources[0].status.failed > 0
+    - name: OAuth Client Creation Block
+      when: existing_oauth_secret.resources | length == 0
+      block:
+        - name: Check for existing OAuth client creation job
+          kubernetes.core.k8s_info:
+            api_version: batch/v1
+            kind: Job
+            name: "{{ app_name }}-keycloak-oauth-create"
+            namespace: "{{ namespace }}"
+          register: existing_oauth_job
+        
+        - name: Delete existing OAuth client creation job if present
+          shell: |
+            kubectl delete job {{ app_name }}-keycloak-oauth-create -n {{ namespace }}
+          when: existing_oauth_job.resources | length > 0
+          register: delete_oauth_job
+          changed_when: true
+        
+        - name: Generate OAuth client creation manifest
+          template:
+            src: files/keycloak-oauth-client-create.yaml.j2
+            dest: /tmp/grafana-oauth-client-create.yaml
+            mode: '0644'
+        
+        - name: Apply OAuth client creation job
+          shell: |
+            kubectl apply -f /tmp/grafana-oauth-client-create.yaml
+          register: apply_oauth_job
+          changed_when: "'configured' in apply_oauth_job.stdout or 'created' in apply_oauth_job.stdout"
+        
+        - name: Wait for OAuth client creation job to complete
+          kubernetes.core.k8s_info:
+            api_version: batch/v1
+            kind: Job
+            name: "{{ app_name }}-keycloak-oauth-create"
+            namespace: "{{ namespace }}"
+          register: oauth_job
+          until: 
+            - oauth_job.resources | length > 0
+            - oauth_job.resources[0].status.completionTime is defined or 
+              (oauth_job.resources[0].status.failed is defined and oauth_job.resources[0].status.failed > 0)
+          retries: 60
+          delay: 5
+        
+        - name: Check if OAuth client creation job succeeded
+          fail:
+            msg: "OAuth client creation job failed. Check logs with: kubectl logs -n {{ namespace }} job/{{ app_name }}-keycloak-oauth-create"
+          when:
+            - oauth_job.resources | length > 0
+            - oauth_job.resources[0].status.failed is defined
+            - oauth_job.resources[0].status.failed > 0
     
     - name: Check for existing Grafana configuration job
       kubernetes.core.k8s_info:
