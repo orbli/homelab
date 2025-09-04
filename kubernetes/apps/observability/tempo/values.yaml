@@ -22,8 +22,6 @@ tempo:
         path: /var/tempo/wal
       block:
         bloom_filter_false_positive: 0.05
-        index_downsample_bytes: 1048576
-        encoding: zstd
         
   # Compactor configuration
   compactor:
@@ -59,13 +57,6 @@ tempo:
   # Query limits
   query_frontend:
     max_outstanding_per_tenant: 200
-    
-  # Overrides for rate limiting
-  overrides:
-    max_bytes_per_trace: 5000000  # 5MB per trace
-    max_traces_per_user: 100000
-    ingestion_rate_limit_bytes: 20000000  # 20MB/s
-    ingestion_burst_size_bytes: 50000000  # 50MB
 
 # Deployment configuration
 replicas: 1
