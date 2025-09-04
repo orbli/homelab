@@ -107,6 +107,32 @@ grafana:
           type: alertmanager
           url: http://{{ release_name }}-kube-prometheus-alertmanager:9093
           access: proxy
+        - name: Tempo
+          type: tempo
+          url: http://{{ tempo_service | default('tempo') }}.{{ namespace }}.svc.{{ cluster_domain }}:3200
+          access: proxy
+          jsonData:
+            tracesToLogsV2:
+              datasourceUid: loki
+              spanStartTimeShift: "-1h"
+              spanEndTimeShift: "1h"
+              tags:
+                - key: "service.name"
+                  value: "service"
+              filterByTraceID: true
+              filterBySpanID: false
+            tracesToMetrics:
+              datasourceUid: prometheus
+              spanStartTimeShift: "-1h"
+              spanEndTimeShift: "1h"
+            serviceMap:
+              datasourceUid: prometheus
+            nodeGraph:
+              enabled: true
+            search:
+              hide: false
+            lokiSearch:
+              datasourceUid: loki
   
   # Grafana.ini configuration
   grafana.ini:

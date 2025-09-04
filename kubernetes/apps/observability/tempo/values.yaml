@@ -81,6 +81,11 @@ resources:
 # Service
 service:
   type: ClusterIP
+  ports:
+    - name: http
+      port: 3200
+      targetPort: 3200
+      protocol: TCP
   
 # Service Monitor for Prometheus
 serviceMonitor:
