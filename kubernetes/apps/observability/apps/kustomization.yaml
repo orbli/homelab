@@ -5,10 +5,9 @@ kind: Kustomization
 # These are managed by the parent App of Apps
 
 resources:
-  - namespace-app.yaml
   - loki-app.yaml
   - alloy-app.yaml
-  # Future additions:
-  # - prometheus-app.yaml
-  # - grafana-app.yaml
-  # - tempo-app.yaml
+  - tempo-app.yaml
+  - pyroscope-app.yaml
+  # Note: namespace-app.yaml moved to /kubernetes/gitops/apps/
+  # Note: Prometheus and Grafana deployed via Helm in playbook 08.2
