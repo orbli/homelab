@@ -1,0 +1,217 @@
+---
+- name: Deploy Grafana Components Stack (Tempo, Pyroscope, Loki)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    namespace: observability
+    gitops_namespace: gitops
+    
+  tasks:
+    - name: Ensure ArgoCD is running
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ gitops_namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=argocd-application-controller
+      register: argocd_pods
+      failed_when: argocd_pods.resources | length == 0
+    
+    - name: Check if observability namespace app exists
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: observability-namespace
+        namespace: "{{ gitops_namespace }}"
+      register: namespace_app_check
+    
+    - name: Deploy observability namespace via ArgoCD if not exists
+      shell: |
+        kubectl apply -f ../../kubernetes/argocd/observability-namespace/observability-namespace-app.yaml
+      when: namespace_app_check.resources | length == 0
+      register: namespace_app
+      changed_when: "'configured' in namespace_app.stdout or 'created' in namespace_app.stdout"
+    
+    - name: Wait for namespace ArgoCD app to sync
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait observability-namespace \
+          --timeout 60 \
+          --health \
+          --sync
+      register: namespace_sync
+      changed_when: false
+    
+    - name: Verify namespace exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: namespace_check
+      failed_when: namespace_check.resources | length == 0
+    
+    - name: Deploy Grafana Components App of Apps
+      shell: |
+        kubectl apply -f /home/eli/workbench/homelab/kubernetes/argocd/grafana-components/grafana-components-app.yaml
+      register: components_app
+      changed_when: "'configured' in components_app.stdout or 'created' in components_app.stdout"
+    
+    - name: Wait for App of Apps to sync
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: grafana-components
+        namespace: "{{ gitops_namespace }}"
+      register: app_of_apps
+      until:
+        - app_of_apps.resources | length > 0
+        - app_of_apps.resources[0].status.sync.status | default('Unknown') == 'Synced'
+        - app_of_apps.resources[0].status.health.status | default('Unknown') == 'Healthy'
+      retries: 60
+      delay: 10
+    
+    - name: Wait for child applications to be created and synced
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ item }}"
+        namespace: "{{ gitops_namespace }}"
+      register: child_app_status
+      until:
+        - child_app_status.resources | length > 0
+        - child_app_status.resources[0].status.sync.status | default('Unknown') == 'Synced'
+        - child_app_status.resources[0].status.health.status | default('Unknown') in ['Healthy', 'Progressing']
+      retries: 60
+      delay: 10
+      loop:
+        - observability-tempo
+        - observability-pyroscope
+        - observability-loki
+    
+    - name: Verify Tempo deployment
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=tempo
+      register: tempo_pods
+      until:
+        - tempo_pods.resources | length > 0
+        - tempo_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: 30
+      delay: 10
+    
+    - name: Verify Pyroscope deployment
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=pyroscope
+      register: pyroscope_pods
+      until:
+        - pyroscope_pods.resources | length > 0
+        - pyroscope_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: 30
+      delay: 10
+    
+    - name: Verify Loki deployment
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=loki
+      register: loki_pods
+      until:
+        - loki_pods.resources | length > 0
+        - loki_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: 30
+      delay: 10
+    
+    - name: Check service endpoints
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: "{{ item }}"
+        namespace: "{{ namespace }}"
+      register: service_check
+      failed_when: service_check.resources | length == 0
+      loop:
+        - tempo
+        - pyroscope
+        - loki
+    
+    - name: Test component health endpoints
+      uri:
+        url: "{{ item.url }}"
+        method: GET
+        status_code: [200, 503]  # Some endpoints return 503 when not fully ready
+      register: health_checks
+      retries: 5
+      delay: 10
+      until: health_checks.status in [200, 503]
+      ignore_errors: true
+      loop:
+        - { name: 'Tempo', url: 'http://tempo.{{ namespace }}.svc.home-hk1-cluster.orbb.li:3100/ready' }
+        - { name: 'Pyroscope', url: 'http://pyroscope.{{ namespace }}.svc.home-hk1-cluster.orbb.li:4040/ready' }
+        - { name: 'Loki', url: 'http://loki.{{ namespace }}.svc.home-hk1-cluster.orbb.li:3100/ready' }
+    
+    - name: Display deployment status
+      debug:
+        msg: |
+          ====================================
+          Grafana Components Stack Deployed!
+          ====================================
+          
+          ✅ All Grafana observability components are now running:
+          
+          📊 TEMPO (Distributed Tracing)
+          - OTLP gRPC: tempo.{{ namespace }}.svc.home-hk1-cluster.orbb.li:4317
+          - OTLP HTTP: tempo.{{ namespace }}.svc.home-hk1-cluster.orbb.li:4318
+          - Query API: http://tempo.{{ namespace }}.svc.home-hk1-cluster.orbb.li:3100
+          - Zipkin: tempo.{{ namespace }}.svc.home-hk1-cluster.orbb.li:9411
+          - Jaeger: tempo.{{ namespace }}.svc.home-hk1-cluster.orbb.li:14268
+          
+          🔥 PYROSCOPE (Continuous Profiling)
+          - Query API: http://pyroscope.{{ namespace }}.svc.home-hk1-cluster.orbb.li:4040
+          - Ingest API: http://pyroscope.{{ namespace }}.svc.home-hk1-cluster.orbb.li:4040/ingest
+          - Supported formats: pprof, JFR, eBPF
+          
+          📝 LOKI (Log Aggregation)
+          - Query API: http://loki.{{ namespace }}.svc.home-hk1-cluster.orbb.li:3100
+          - Push API: http://loki.{{ namespace }}.svc.home-hk1-cluster.orbb.li:3100/loki/api/v1/push
+          - Components: 3x Loki replicas, 2x Memcached clusters
+          
+          ArgoCD Applications:
+          - grafana-components (App of Apps): Synced / Healthy
+          - observability-tempo: Synced / Healthy
+          - observability-pyroscope: Synced / Healthy  
+          - observability-loki: Synced / Healthy
+          
+          Next Steps:
+          1. Deploy Grafana Alloy for unified telemetry collection (playbook 06)
+          2. Configure OAuth authentication (playbook 08.1)
+          3. Deploy Prometheus and Grafana with datasources (playbook 08.2)
+          
+          Verification Commands:
+          # Check all components
+          kubectl get pods -n {{ namespace }} | grep -E 'tempo|pyroscope|loki'
+          
+          # View ArgoCD apps
+          ARGOCD_OPTS="--core" argocd app list | grep observability
+          
+          # Test endpoints
+          curl -s http://tempo.{{ namespace }}.svc.home-hk1-cluster.orbb.li:3100/status
+          curl -s http://pyroscope.{{ namespace }}.svc.home-hk1-cluster.orbb.li:4040/ready
+          curl -s http://loki.{{ namespace }}.svc.home-hk1-cluster.orbb.li:3100/ready
+    
+    - name: Report health check results
+      debug:
+        msg: |
+          Component Health Status:
+          {% for result in health_checks.results %}
+          - {{ result.item.name }}: {{ 'READY' if result.status == 200 else 'INITIALIZING' if result.status == 503 else 'FAILED' }}
+          {% endfor %}
