@@ -14,7 +14,7 @@ spec:
   source:
     repoURL: https://github.com/orbli/homelab.git
     targetRevision: master
-    path: kubernetes/manifests/cloudflared
+    path: kubernetes/manifests/cloudflared-namespace
     kustomize: {}
   
   destination:

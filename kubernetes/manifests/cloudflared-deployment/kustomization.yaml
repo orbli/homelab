@@ -4,7 +4,8 @@ kind: Kustomization
 namespace: ingress
 
 resources:
-- namespace.yaml
+- configmap.yaml
+- deployment.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: argocd
