@@ -64,7 +64,7 @@
           spec:
             project: default
             source:
-              repoURL: https://github.com/eli-li/homelab
+              repoURL: https://github.com/orbli/homelab
               targetRevision: master
               path: kubernetes/manifests/observability-host
             destination:
