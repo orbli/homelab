@@ -33,6 +33,15 @@ prometheus:
     
     # Additional scrape configs (if needed)
     additionalScrapeConfigs: []
+    
+    # Enable remote write receiver for metrics ingestion from Alloy
+    enableFeatures:
+      - remote-write-receiver
+    
+    # Web configuration to enable remote write endpoint
+    webSpec:
+      tlsConfig:
+        clientAuthType: "NoClientAuth"
 
 # AlertManager Configuration
 alertmanager:

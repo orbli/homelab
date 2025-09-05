@@ -49,8 +49,8 @@ alloy:
         }
       }
       
-      // ====== TRACE COLLECTION (OTEL) ======
-      // OTLP receiver for traces
+      // ====== OTLP COLLECTION (TRACES, METRICS, LOGS) ======
+      // OTLP receiver for traces, metrics, and logs
       otelcol.receiver.otlp "default" {
         grpc {
           endpoint = "0.0.0.0:4317"
@@ -61,19 +61,37 @@ alloy:
         }
         
         output {
-          traces  = [otelcol.processor.batch.default.input]
+          traces  = [otelcol.processor.batch.traces.input]
+          metrics = [otelcol.processor.batch.metrics.input]
+          logs    = [otelcol.processor.batch.logs.input]
         }
       }
       
-      // Batch processor for better performance
-      otelcol.processor.batch "default" {
+      // ====== BATCH PROCESSORS ======
+      // Batch processor for traces
+      otelcol.processor.batch "traces" {
         output {
-          traces = [otelcol.processor.k8sattributes.default.input]
+          traces = [otelcol.processor.k8sattributes.traces.input]
         }
       }
       
+      // Batch processor for metrics
+      otelcol.processor.batch "metrics" {
+        output {
+          metrics = [otelcol.processor.k8sattributes.metrics.input]
+        }
+      }
+      
+      // Batch processor for logs
+      otelcol.processor.batch "logs" {
+        output {
+          logs = [otelcol.processor.k8sattributes.logs.input]
+        }
+      }
+      
+      // ====== K8S ATTRIBUTE PROCESSORS ======
       // Add Kubernetes attributes to traces
-      otelcol.processor.k8sattributes "default" {
+      otelcol.processor.k8sattributes "traces" {
         extract {
           metadata = ["k8s.namespace.name", "k8s.pod.name", "k8s.deployment.name", "k8s.node.name"]
         }
@@ -83,12 +101,63 @@ alloy:
         }
       }
       
+      // Add Kubernetes attributes to metrics
+      otelcol.processor.k8sattributes "metrics" {
+        extract {
+          metadata = ["k8s.namespace.name", "k8s.pod.name", "k8s.deployment.name", "k8s.node.name"]
+        }
+        
+        output {
+          metrics = [otelcol.exporter.prometheus.otlp_metrics.input]
+        }
+      }
+      
+      // Add Kubernetes attributes to logs
+      otelcol.processor.k8sattributes "logs" {
+        extract {
+          metadata = ["k8s.namespace.name", "k8s.pod.name", "k8s.deployment.name", "k8s.node.name"]
+        }
+        
+        output {
+          logs = [otelcol.exporter.loki.otlp.input]
+        }
+      }
+      
+      // ====== EXPORTERS ======
       // Export traces to Tempo
       otelcol.exporter.otlp "tempo" {
         client {
           endpoint = "tempo.observability.svc.home-hk1-cluster.orbb.li:4317"
           tls {
             insecure = true
+          }
+        }
+      }
+      
+      // Convert and export OTLP metrics to Prometheus remote write
+      otelcol.exporter.prometheus "otlp_metrics" {
+        forward_to = [prometheus.remote_write.default.receiver]
+        add_metric_suffixes = false
+      }
+      
+      // Export OTLP logs to Loki
+      otelcol.exporter.loki "otlp" {
+        forward_to = [loki.write.default.receiver]
+      }
+      
+      // ====== PROMETHEUS REMOTE WRITE ======
+      // Send metrics to Prometheus via remote write
+      prometheus.remote_write "default" {
+        endpoint {
+          url = "http://prometheus-kube-prometheus-prometheus.observability.svc.home-hk1-cluster.orbb.li:9090/api/v1/write"
+          
+          // Optional: Add metadata labels to identify OTLP metrics source
+          // You can customize this based on your needs
+          write_relabel_config {
+            source_labels = ["__name__"]
+            regex = ".*"
+            target_label = "telemetry_source"
+            replacement = "alloy_otlp"
           }
         }
       }
@@ -176,20 +245,8 @@ alloy:
         }
       }
 
-# Deployment configuration
-controller:
-  type: deployment
-  replicas: 1
-
-# Service
-service:
-  enabled: true
-  type: ClusterIP
-  ports:
-    - name: http-metrics
-      port: 12345
-      targetPort: 12345
-      protocol: TCP
+  # Extra ports for OTLP receivers
+  extraPorts:
     - name: otlp-grpc
       port: 4317
       targetPort: 4317
