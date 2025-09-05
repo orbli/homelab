@@ -3,7 +3,7 @@ kind: Kustomization
 
 # Child ArgoCD applications for the observability stack
 resources:
-  - ../loki/loki-app.yaml
-  - ../alloy/alloy-app.yaml
+  - loki-app.yaml
+  - alloy-app.yaml
   # Note: Tempo and Pyroscope are deployed separately via ansible playbooks
   # Note: Prometheus and Grafana are deployed via Helm in playbook 08.2
