@@ -7,6 +7,9 @@ prometheus:
     retention: {{ prometheus_retention }}
     retentionSize: {{ prometheus_retention_size }}
     
+    # Enable remote write receiver for OTLP metrics from Alloy
+    enableRemoteWriteReceiver: true
+    
     # Storage configuration
     storageSpec:
       volumeClaimTemplate:
@@ -34,11 +37,7 @@ prometheus:
     # Additional scrape configs (if needed)
     additionalScrapeConfigs: []
     
-    # Enable remote write receiver for metrics ingestion from Alloy
-    enableFeatures:
-      - remote-write-receiver
-    
-    # Web configuration to enable remote write endpoint
+    # Web configuration for remote write endpoint
     webSpec:
       tlsConfig:
         clientAuthType: "NoClientAuth"
