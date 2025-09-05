@@ -295,6 +295,8 @@ grafana:
 # Node Exporter Configuration
 prometheus-node-exporter:
   enabled: true
+  # Deploy node-exporter in a separate namespace with privileged access
+  namespaceOverride: observability-host
   resources:
     requests:
       cpu: 50m

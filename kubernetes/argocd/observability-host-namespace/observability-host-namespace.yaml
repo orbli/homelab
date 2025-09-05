@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-host-namespace
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/eli-li/homelab
+    targetRevision: master
+    path: kubernetes/manifests/observability-host
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
