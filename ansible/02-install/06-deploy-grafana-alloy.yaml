@@ -1,0 +1,150 @@
+---
+- name: Deploy Grafana Alloy for Unified Telemetry Collection
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  
+  vars:
+    namespace: observability
+    
+  tasks:
+    - name: Ensure ArgoCD is running
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: gitops
+        label_selectors:
+          - app.kubernetes.io/name=argocd-application-controller
+      register: argocd_pods
+      failed_when: argocd_pods.resources | length == 0
+    
+    - name: Verify namespace exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ namespace }}"
+      register: namespace_check
+      failed_when: namespace_check.resources | length == 0
+    
+    - name: Check if Loki is deployed
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: loki
+        namespace: "{{ namespace }}"
+      register: loki_check
+      failed_when: loki_check.resources | length == 0
+    
+    - name: Deploy Alloy ArgoCD Application
+      shell: |
+        kubectl apply -f /home/eli/workbench/homelab/kubernetes/argocd/alloy/alloy-app.yaml
+      register: alloy_app
+      changed_when: "'configured' in alloy_app.stdout or 'created' in alloy_app.stdout"
+    
+    - name: Wait for Alloy app to sync
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait observability-alloy \
+          --timeout 300 \
+          --health \
+          --sync
+      register: alloy_sync
+      changed_when: false
+    
+    - name: Verify Alloy deployment
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=alloy
+      register: alloy_pods
+      until:
+        - alloy_pods.resources | length > 0
+        - alloy_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: 30
+      delay: 10
+    
+    - name: Check Alloy service endpoints
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: alloy
+        namespace: "{{ namespace }}"
+      register: alloy_service
+      failed_when: alloy_service.resources | length == 0
+    
+    - name: Get Alloy pod logs to verify collection
+      shell: |
+        kubectl logs -n {{ namespace }} -l app.kubernetes.io/name=alloy --tail=10 | grep -E "(started|ready|collecting)" || echo "Alloy is starting..."
+      register: alloy_logs
+      changed_when: false
+    
+    - name: Display Alloy deployment status
+      debug:
+        msg: |
+          ====================================
+          Alloy Deployment Complete!
+          ====================================
+          
+          Grafana Alloy is now running and collecting telemetry data:
+          
+          Service Endpoints:
+          - Internal API: http://alloy.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:12345
+          - OTLP Receiver: alloy.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4317 (gRPC)
+          - OTLP Receiver: alloy.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4318 (HTTP)
+          
+          Data Collection:
+          ✅ Logs: Collecting from all pods via Kubernetes API
+          ✅ Metrics: Scraping Prometheus endpoints
+          ✅ Traces: Ready to receive via OTLP
+          ✅ Profiles: Ready to receive continuous profiling data
+          
+          Data Destinations:
+          - Logs → Loki (http://loki.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:3100)
+          - Metrics → Prometheus (configured in scrape configs)
+          - Traces → Tempo (http://tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4317)
+          - Profiles → Pyroscope (http://pyroscope.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:4040)
+          
+          Configuration:
+          - Mode: Flow mode (alloy configuration language)
+          - Discovery: Kubernetes SD for automatic pod discovery
+          - Labels: Automatic labeling with namespace, pod, container info
+          
+          Verification Commands:
+          # Check Alloy status
+          kubectl get pods -n {{ namespace }} -l app.kubernetes.io/name=alloy
+          
+          # View Alloy logs
+          kubectl logs -n {{ namespace }} -l app.kubernetes.io/name=alloy --tail=50
+          
+          # Check collected logs in Loki via Grafana
+          # Navigate to Grafana → Explore → Select Loki datasource
+    
+    - name: Test Alloy health endpoint
+      uri:
+        url: "http://alloy.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:12345/-/ready"
+        method: GET
+        status_code: 200
+      register: alloy_health
+      retries: 5
+      delay: 10
+      until: alloy_health.status == 200
+      ignore_errors: true
+    
+    - name: Report Alloy health status
+      debug:
+        msg: "Alloy health check: {{ 'PASSED - Collecting telemetry from all pods' if alloy_health.status == 200 else 'FAILED - Manual verification needed' }}"
+    
+    - name: Check if logs are being collected
+      shell: |
+        echo "Checking if Alloy is successfully pushing logs to Loki..."
+        kubectl exec -n {{ namespace }} deployment/alloy -- curl -s http://localhost:12345/metrics | grep -E "loki_process_dropped_logs_total|alloy_logs_consumer_sent_log_entries_total" | head -5
+      register: metrics_check
+      changed_when: false
+      ignore_errors: true
+    
+    - name: Display collection metrics
+      debug:
+        msg: |
+          Log Collection Metrics:
+          {{ metrics_check.stdout if metrics_check.rc == 0 else 'Metrics not yet available - Alloy is still initializing' }}

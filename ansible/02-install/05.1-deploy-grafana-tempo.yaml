@@ -110,8 +110,8 @@
           - Jaeger gRPC: tempo.{{ namespace }}.svc.{{ cluster_domain | default('home-hk1-cluster.orbb.li') }}:14250
           
           Next Steps:
-          1. Update Alloy configuration to send traces to Tempo (playbook 07)
-          2. Configure Grafana datasource for Tempo (playbook 08)
+          1. Update Alloy configuration to send traces to Tempo (playbook 06)
+          2. Configure Grafana datasource for Tempo (playbook 08.2)
           3. Applications can now send traces via OTLP to port 4317 (gRPC) or 4318 (HTTP)
     
     - name: Test Tempo health endpoint

@@ -1,7 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-# ArgoCD applications for cloudflared
-resources:
-  - cloudflared-namespace-app.yaml
-  - cloudflared-deployment-app.yaml
