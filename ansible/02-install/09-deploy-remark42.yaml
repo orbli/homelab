@@ -1,0 +1,286 @@
+---
+# 09 - Remark42 Deployment via ArgoCD
+# This playbook:
+# 1. Generates SECRET (JWT signing key) and ADMIN_PASSWD into a secret
+# 2. Creates a Keycloak OAuth client for remark42 via kcadm job
+# 3. Deploys the remark42 ArgoCD Application (PVC, Service, Deployment)
+# 4. Monitors deployment health
+#
+# Note: Clean separation of concerns:
+# - ArgoCD manages: PVC, Service, Deployment
+# - Ansible manages: app secret (jwt + admin passwd), OAuth client secret
+#
+# Cloudflared route: edit kubernetes/manifests/cloudflared-deployment/configmap.yaml
+# (already includes remark42-lab.orbb.li) and re-run 03-deploy-cloudflared.yaml.
+# DNS route at Cloudflare itself: run once on a machine with the cloudflared
+# CLI logged in (the playbook prints the exact command at the end).
+
+- name: Deploy Remark42 via ArgoCD
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    namespace: default
+    gitops_namespace: gitops
+    keycloak_namespace: iam
+    keycloak_realm: "orbb.li"
+    cluster_domain: "home-hk1-cluster.orbb.li"
+    argocd_apps_path: "../../kubernetes/argocd/remark42"
+
+    # Remark42 OAuth client configuration
+    app_name: remark42
+    app_display_name: "Remark42"
+    app_description: "Remark42 Comments for orbb.li"
+    app_root_url: "https://remark42-lab.orbb.li"
+    app_base_url: "/"
+
+    oauth_client_id: remark42
+    oauth_secret_name: remark42-oauth-client
+    oauth_redirect_uris:
+      - "https://remark42-lab.orbb.li/auth/keycloak/callback"
+    oauth_web_origins:
+      - "https://remark42-lab.orbb.li"
+    oauth_default_scopes:
+      - "openid"
+      - "email"
+      - "profile"
+
+    # remark42-specific app secret
+    app_secret_name: remark42-app-secret
+
+  tasks:
+    # STAGE 0: Pull Keycloak admin credentials
+    - name: Get Keycloak admin credentials from secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: keycloak-initial-admin
+        namespace: "{{ keycloak_namespace }}"
+      register: keycloak_admin_secret
+      failed_when: keycloak_admin_secret.resources | length == 0
+
+    - name: Extract Keycloak admin credentials
+      set_fact:
+        keycloak_admin_username: "{{ keycloak_admin_secret.resources[0].data.username | b64decode }}"
+        keycloak_admin_password: "{{ keycloak_admin_secret.resources[0].data.password | b64decode }}"
+      no_log: true
+
+    # STAGE 1: Create remark42 app secret (SECRET + ADMIN_PASSWD)
+    # Only generated if it doesn't already exist, so re-runs of the playbook
+    # don't invalidate existing JWTs (which would log every user out).
+    - name: Check if remark42 app secret already exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ app_secret_name }}"
+        namespace: "{{ namespace }}"
+      register: existing_app_secret
+
+    - name: Generate remark42 app secret
+      when: existing_app_secret.resources | length == 0
+      block:
+        - name: Generate JWT signing key and admin password
+          set_fact:
+            jwt_secret: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+            admin_passwd: "{{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+          no_log: true
+
+        - name: Create remark42 app secret
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: "{{ app_secret_name }}"
+                namespace: "{{ namespace }}"
+                labels:
+                  app.kubernetes.io/name: remark42
+                  app.kubernetes.io/part-of: comments
+                  app.kubernetes.io/managed-by: ansible
+              type: Opaque
+              stringData:
+                jwt-secret: "{{ jwt_secret }}"
+                admin-passwd: "{{ admin_passwd }}"
+          no_log: true
+
+    # STAGE 2: Create Keycloak OAuth client via kcadm job
+    - name: Check if OAuth client secret already exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ oauth_secret_name }}"
+        namespace: "{{ namespace }}"
+      register: existing_oauth_secret
+
+    - name: OAuth Client Creation Block
+      when: existing_oauth_secret.resources | length == 0
+      block:
+        - name: Check for existing OAuth client creation job
+          kubernetes.core.k8s_info:
+            api_version: batch/v1
+            kind: Job
+            name: "{{ app_name }}-keycloak-oauth-create"
+            namespace: "{{ namespace }}"
+          register: existing_oauth_job
+
+        - name: Delete existing OAuth client creation job if present
+          shell: |
+            kubectl delete job {{ app_name }}-keycloak-oauth-create -n {{ namespace }}
+          when: existing_oauth_job.resources | length > 0
+          changed_when: true
+
+        - name: Generate OAuth client creation manifest
+          template:
+            src: files/keycloak-oauth-client-create.yaml.j2
+            dest: /tmp/remark42-oauth-client-create.yaml
+            mode: '0644'
+
+        - name: Apply OAuth client creation job
+          shell: |
+            kubectl apply -f /tmp/remark42-oauth-client-create.yaml
+          register: apply_oauth_job
+          changed_when: "'configured' in apply_oauth_job.stdout or 'created' in apply_oauth_job.stdout"
+
+        - name: Wait for OAuth client creation job to complete
+          kubernetes.core.k8s_info:
+            api_version: batch/v1
+            kind: Job
+            name: "{{ app_name }}-keycloak-oauth-create"
+            namespace: "{{ namespace }}"
+          register: oauth_job
+          until:
+            - oauth_job.resources | length > 0
+            - oauth_job.resources[0].status.completionTime is defined or
+              (oauth_job.resources[0].status.failed is defined and oauth_job.resources[0].status.failed > 0)
+          retries: 60
+          delay: 5
+
+        - name: Fail if OAuth client creation job failed
+          fail:
+            msg: "OAuth client creation job failed. Check logs with: kubectl logs -n {{ namespace }} job/{{ app_name }}-keycloak-oauth-create"
+          when:
+            - oauth_job.resources | length > 0
+            - oauth_job.resources[0].status.failed is defined
+            - oauth_job.resources[0].status.failed > 0
+
+    - name: Verify OAuth client secret exists
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ oauth_secret_name }}"
+        namespace: "{{ namespace }}"
+      register: oauth_secret_check
+      failed_when: oauth_secret_check.resources | length == 0
+
+    # STAGE 3: Apply ArgoCD Application
+    - name: Apply remark42 ArgoCD Application
+      shell: |
+        kubectl apply -f {{ argocd_apps_path }}/remark42-deployment-app.yaml
+      register: argocd_app_result
+      changed_when: "'configured' in argocd_app_result.stdout or 'created' in argocd_app_result.stdout"
+
+    - name: Wait for ArgoCD Application to be created
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: remark42-deployment
+        namespace: "{{ gitops_namespace }}"
+      register: app_check
+      until: app_check.resources | length > 0
+      retries: 10
+      delay: 5
+
+    - name: Sync remark42-deployment app
+      shell: |
+        ARGOCD_OPTS="--core" argocd app sync remark42-deployment --retry-limit 3
+      register: sync_app
+      changed_when: true
+      ignore_errors: true  # initial sync may race the secret; final wait verifies health
+
+    # STAGE 4: Wait for deployment to be ready
+    - name: Wait for remark42 deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: remark42
+        namespace: "{{ namespace }}"
+      register: deployment
+      until: |
+        deployment.resources | length > 0 and
+        deployment.resources[0].status.conditions is defined and
+        deployment.resources[0].status.conditions | json_query('[?type==`Available`].status') | first | default(false) == 'True'
+      retries: 36
+      delay: 5
+
+    - name: Wait for remark42-deployment app to be healthy
+      shell: |
+        ARGOCD_OPTS="--core" argocd app wait remark42-deployment --health --timeout 300
+      register: app_health
+      retries: 3
+      delay: 10
+      until: app_health.rc == 0
+
+    # STAGE 5: Report
+    - name: Retrieve admin password for display
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ app_secret_name }}"
+        namespace: "{{ namespace }}"
+      register: app_secret_display
+
+    - name: Decode admin password
+      set_fact:
+        decoded_admin_passwd: "{{ app_secret_display.resources[0].data['admin-passwd'] | b64decode }}"
+      when: app_secret_display.resources | length > 0
+      no_log: true
+
+    - name: Clean up temporary manifest files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/remark42-oauth-client-create.yaml
+      tags: cleanup
+
+    - name: Display deployment status
+      debug:
+        msg: |
+          Remark42 deployment completed!
+
+          GitOps-managed (ArgoCD):
+          - remark42-deployment (PVC, Service, Deployment) in {{ namespace }} ns
+
+          Ansible-managed:
+          - {{ app_secret_name }} (jwt signing key + admin password)
+          - {{ oauth_secret_name }} (Keycloak OAuth client credentials)
+
+          Service URL (cluster): http://remark42.default.svc.{{ cluster_domain }}
+          Public URL:            {{ app_root_url }}
+
+          ---- One-time DNS setup ----
+          The cloudflared ConfigMap now includes a route for remark42-lab.orbb.li,
+          but the Cloudflare-side DNS record still needs to be created. Run this
+          ONCE on a machine with the cloudflared CLI logged in:
+
+            cloudflared tunnel route dns home-hk1-cluster-tunnel remark42-lab.orbb.li
+
+          Then re-run 03-deploy-cloudflared.yaml to roll out the updated ConfigMap
+          (the cloudflared pods need to be restarted to pick up the new route).
+
+          ---- Admin login ----
+          Admin login via HTTP Basic auth as fallback:
+            username: admin
+            password: {{ decoded_admin_passwd | default('(check ' + app_secret_name + ' secret)') }}
+
+          Or sign in via Keycloak (button labelled "keycloak" on the comment widget).
+          To make your Keycloak user a remark42 admin, set ADMIN_SHARED_ID in the
+          deployment env after your first login — the user's remark42 ID is shown
+          in the comment-widget user menu.
+
+          Monitor with:
+            ARGOCD_OPTS="--core" argocd app list
+            kubectl get all -n {{ namespace }} -l app.kubernetes.io/name=remark42
+            kubectl logs -n {{ namespace }} -l app=remark42

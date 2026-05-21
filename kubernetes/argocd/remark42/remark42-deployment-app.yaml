@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: remark42-deployment
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: remark42-deployment
+    app.kubernetes.io/part-of: comments
+  annotations:
+    argocd.argoproj.io/sync-wave: "50"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/orbli/homelab.git
+    targetRevision: master
+    path: kubernetes/manifests/remark42-deployment
+    kustomize: {}
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  syncPolicy:
+    automated:
+      prune: true
+      # Same reasoning as cloudflared-deployment: the deployment references
+      # secrets that Ansible creates out-of-band, so don't let ArgoCD self-heal
+      # while those are still being provisioned.
+      selfHeal: false
+    syncOptions:
+    - CreateNamespace=false
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

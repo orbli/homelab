@@ -1,0 +1,95 @@
+---
+# Cleanup playbook for Remark42
+# Removes ArgoCD app, k8s resources, PVC (data!), and ansible-managed secrets.
+# Does NOT delete the OAuth client in Keycloak — re-running 09-deploy-remark42
+# will reuse the existing client (or re-create the secret if missing).
+
+- name: Cleanup Remark42 deployment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    namespace: default
+    gitops_namespace: gitops
+
+  tasks:
+    - name: Delete remark42 ArgoCD Application
+      kubernetes.core.k8s:
+        state: absent
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: remark42-deployment
+        namespace: "{{ gitops_namespace }}"
+        wait: true
+        wait_timeout: 120
+
+    - name: Delete remark42 Deployment (in case ArgoCD prune missed it)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: apps/v1
+        kind: Deployment
+        name: remark42
+        namespace: "{{ namespace }}"
+
+    - name: Delete remark42 Service
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Service
+        name: remark42
+        namespace: "{{ namespace }}"
+
+    - name: Delete remark42 PVC (DESTROYS COMMENT DATA)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: PersistentVolumeClaim
+        name: remark42-data
+        namespace: "{{ namespace }}"
+
+    - name: Delete remark42 app secret
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Secret
+        name: remark42-app-secret
+        namespace: "{{ namespace }}"
+
+    - name: Delete remark42 OAuth client secret
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Secret
+        name: remark42-oauth-client
+        namespace: "{{ namespace }}"
+
+    - name: Delete leftover OAuth client creation job (if any)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: remark42-keycloak-oauth-create
+        namespace: "{{ namespace }}"
+
+    - name: Delete OAuth setup ServiceAccount/Role/RoleBinding
+      kubernetes.core.k8s:
+        state: absent
+        api_version: "{{ item.api }}"
+        kind: "{{ item.kind }}"
+        name: remark42-oauth-setup
+        namespace: "{{ namespace }}"
+      loop:
+        - { api: v1, kind: ServiceAccount }
+        - { api: rbac.authorization.k8s.io/v1, kind: Role }
+        - { api: rbac.authorization.k8s.io/v1, kind: RoleBinding }
+
+    - name: Display cleanup status
+      debug:
+        msg: |
+          Remark42 cleanup complete.
+
+          Note: the Keycloak client 'remark42' in realm orbb.li was NOT deleted.
+          If you want to remove it as well:
+            kubectl exec -n iam keycloak-0 -- /opt/keycloak/bin/kcadm.sh \
+              delete clients/<id> -r orbb.li

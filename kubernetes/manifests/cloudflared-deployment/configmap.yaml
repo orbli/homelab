@@ -33,4 +33,8 @@ data:
       service: http://prometheus-grafana.observability.svc.home-hk1-cluster.orbb.li
       originRequest:
         noTLSVerify: true
+    - hostname: remark42-lab.orbb.li
+      service: http://remark42.default.svc.home-hk1-cluster.orbb.li:80
+      originRequest:
+        noTLSVerify: true
     - service: http_status:404

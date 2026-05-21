@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remark42
+  namespace: default
+  labels:
+    app.kubernetes.io/name: remark42
+    app.kubernetes.io/part-of: comments
+spec:
+  # Bolt (the embedded KV store) takes an exclusive file lock on the PVC, so
+  # there can only ever be one replica. Use Recreate so the new pod can grab
+  # the lock as soon as the old one releases it.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: remark42
+  template:
+    metadata:
+      labels:
+        app: remark42
+        app.kubernetes.io/name: remark42
+        app.kubernetes.io/part-of: comments
+    spec:
+      securityContext:
+        fsGroup: 1001
+      containers:
+      - name: remark42
+        # Pinned to a master-branch digest because custom OAuth (AUTH_CUSTOM_*),
+        # which we need to talk to Keycloak, was not in the v1.15.0 release.
+        # Bump deliberately: pull `umputun/remark42:master`, capture the digest
+        # with `docker inspect`, paste it here.
+        image: umputun/remark42:master@sha256:a1935487c5d55b01f42ee7e56a7717a11e7b01476699dfdf9cdec3060996e51a
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+        env:
+        - name: REMARK_URL
+          value: "https://remark42-lab.orbb.li"
+        - name: SITE
+          value: "orbli"
+        - name: STORE_BOLT_PATH
+          value: "/srv/var/db"
+        - name: BACKUP_PATH
+          value: "/srv/var/backup"
+        - name: ALLOWED_HOSTS
+          value: "'self',https://orbb.li"
+        - name: ADMIN_SHARED_EMAIL
+          value: "mail@orbb.li"
+        - name: AUTH_ANON
+          value: "false"
+        - name: AUTH_EMAIL_ENABLE
+          value: "false"
+        - name: AUTH_CUSTOM_NAME
+          value: "keycloak"
+        - name: AUTH_CUSTOM_AUTH_URL
+          value: "https://keycloak-lab.orbb.li/realms/orbb.li/protocol/openid-connect/auth"
+        - name: AUTH_CUSTOM_TOKEN_URL
+          value: "https://keycloak-lab.orbb.li/realms/orbb.li/protocol/openid-connect/token"
+        - name: AUTH_CUSTOM_INFO_URL
+          value: "https://keycloak-lab.orbb.li/realms/orbb.li/protocol/openid-connect/userinfo"
+        - name: AUTH_CUSTOM_SCOPES
+          value: "openid,email,profile"
+        - name: AUTH_CUSTOM_NAME_FIELD
+          value: "preferred_username"
+        - name: SECRET
+          valueFrom:
+            secretKeyRef:
+              name: remark42-app-secret
+              key: jwt-secret
+        - name: ADMIN_PASSWD
+          valueFrom:
+            secretKeyRef:
+              name: remark42-app-secret
+              key: admin-passwd
+        - name: AUTH_CUSTOM_CID
+          valueFrom:
+            secretKeyRef:
+              name: remark42-oauth-client
+              key: client-id
+        - name: AUTH_CUSTOM_CSEC
+          valueFrom:
+            secretKeyRef:
+              name: remark42-oauth-client
+              key: client-secret
+        volumeMounts:
+        - name: data
+          mountPath: /srv/var
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 5
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: remark42-data
