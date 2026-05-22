@@ -58,20 +58,8 @@ resources:
 # Keycloak CR
 - keycloak-cr.yaml
 
-# Custom login themes packaged as ConfigMaps and mounted by keycloak-cr.yaml.
-# Each ConfigMap holds one theme directory's flat files; subPath mounts in
-# the Keycloak CR place them at the expected nested paths under
-# /opt/keycloak/themes/<name>/login/...
-configMapGenerator:
-- name: keycloak-theme-no-text-login
-  files:
-  - themes/keycloak.v2.no-text/login/theme.properties
-- name: keycloak-theme-no-text-login-css
-  files:
-  - themes/keycloak.v2.no-text/login/resources/css/extra.css
-
-generatorOptions:
-  # Disable name suffix hashing so the Keycloak CR can reference a stable name.
-  # Updates to theme content require a pod restart to be picked up regardless;
-  # without hashing we control the restart explicitly.
-  disableNameSuffixHash: true
+# Note: custom login themes used to be packaged here as ConfigMaps and
+# mounted via spec.unsupported.podTemplate. That approach was replaced
+# by a custom Keycloak image (see Dockerfile + .github/workflows/
+# build-keycloak.yml) — the themes live under themes/ in this directory
+# as the COPY source for the image build.
