@@ -23,11 +23,16 @@
   display: none !important;
 }
 
-/* 2. Remove the divider line above the social-providers section.
- *    PatternFly v5's .pf-v5-c-login__main-footer draws a border-top that
- *    was meant to visually separate the password form from the IdP
- *    buttons. With the form gone, the line has nothing to separate.
+/* 2. Remove the divider line above the "Sign in with" label.
+ *    PatternFly v5 draws it as `border-block-start` on the
+ *    .pf-v5-c-login__main-footer-band element (the wrapper around the
+ *    "Sign in with" text), NOT as `border-top` on the parent footer.
+ *    A `border-top: 0` override misses it because logical and physical
+ *    border properties are independent in the cascade — we need to
+ *    zero out the logical property. Belt-and-braces both properties
+ *    in case a future theme upgrade switches representation.
  */
-.pf-v5-c-login__main-footer {
+.pf-v5-c-login__main-footer-band {
+  border-block-start: 0 !important;
   border-top: 0 !important;
 }
