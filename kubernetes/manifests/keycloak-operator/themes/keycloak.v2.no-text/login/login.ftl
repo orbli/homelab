@@ -7,7 +7,10 @@
 <!-- template: login.ftl -->
 
     <#if section = "header">
-        ${msg("loginAccountTitle")}
+        <#-- Header section intentionally empty: page title ("Sign in to your
+             account") is suppressed. template.ftl still renders the wrapping
+             <h1 id="kc-page-title"> element, but it ends up empty and CSS
+             in resources/css/extra.css hides the surrounding header bar. -->
     <#elseif section = "form">
         <#-- Form section intentionally empty: username/password text-box
              login is removed for this realm. Users sign in exclusively via

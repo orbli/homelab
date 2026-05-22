@@ -1,0 +1,33 @@
+/*
+ * Additional style overrides for keycloak.v2.no-text.
+ *
+ * This file is loaded AFTER styles.css (see theme.properties `styles=`
+ * line) so any rules here override the parent.
+ *
+ * New file = new resource URL the first time it's served, so Cloudflare
+ * has nothing cached. Future edits to this same file WILL hit
+ * Cloudflare's 30-day cache though, since the URL stays stable until
+ * Keycloak's build hash changes; remember to purge on iteration.
+ */
+
+/* 1. Hide the page-title bar.
+ *    login.ftl's header section is empty, so the rendered h1 has no
+ *    content — but template.ftl unconditionally emits the surrounding
+ *    <div class="pf-v5-c-login__main-header"> wrapper which still
+ *    contributes vertical padding. Hide the whole wrapper. The
+ *    internationalisation language switcher also lives inside it, but
+ *    this realm has no i18n enabled, so the wrapper is just an empty
+ *    spacer.
+ */
+.pf-v5-c-login__main-header {
+  display: none !important;
+}
+
+/* 2. Remove the divider line above the social-providers section.
+ *    PatternFly v5's .pf-v5-c-login__main-footer draws a border-top that
+ *    was meant to visually separate the password form from the IdP
+ *    buttons. With the form gone, the line has nothing to separate.
+ */
+.pf-v5-c-login__main-footer {
+  border-top: 0 !important;
+}
