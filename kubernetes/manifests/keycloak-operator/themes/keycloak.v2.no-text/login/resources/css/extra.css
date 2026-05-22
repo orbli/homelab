@@ -1,0 +1,33 @@
+/*
+ * keycloak.v2.no-text login overlay
+ *
+ * Hides the page title, the username/password form, the "Or sign in with"
+ * divider+heading, and any other instructional copy so the ONLY visible
+ * action on the login page is the IdP (Google) button.
+ *
+ * Selectors cover both the PatternFly v5 layout that ships with Keycloak
+ * 26.x and the legacy keycloak.v2 selectors, so this remains correct across
+ * a couple of minor versions of the parent theme.
+ */
+
+#kc-page-title,
+.pf-v5-c-login__main-header,
+#kc-form,
+#kc-form-login,
+#kc-form-wrapper,
+#kc-info,
+.kc-social-section hr,
+.kc-social-section h2,
+.kc-social-section header,
+#kc-social-providers > h2,
+#kc-social-providers > hr,
+hr.kc-login-tooltip {
+  display: none !important;
+}
+
+/* Drop the card's top border indicator (the thin blue bar) so the page
+ * doesn't look truncated once the form is gone. Optional, comment out
+ * if you'd rather keep it as visual framing. */
+.pf-v5-c-login__main {
+  border-top: none !important;
+}
