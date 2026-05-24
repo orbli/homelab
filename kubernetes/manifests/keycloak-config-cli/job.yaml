@@ -32,11 +32,12 @@ spec:
       restartPolicy: Never
       containers:
         - name: keycloak-config-cli
-          # Pinned: keycloak-config-cli version 6.4.0, built against
-          # Keycloak 26.0.1 admin API. Our live Keycloak is 26.3.3 —
-          # the admin API surface is backward-compatible within 26.x.
-          # Bump when upgrading Keycloak across minor versions.
-          image: adorsys/keycloak-config-cli:6.4.0-26.0.1
+          # Pinned: keycloak-config-cli version 6.5.1, built against
+          # Keycloak 26.x admin API (rolling within 26 major). Our live
+          # Keycloak is 26.3.3; the 26-major rolling tag is the most
+          # specific tag adorsys publishes that's guaranteed compatible.
+          # Bump to 27 when upgrading Keycloak across major versions.
+          image: adorsys/keycloak-config-cli:6.5.1-26
           env:
             # Internal service — no public hostname needed.
             - name: KEYCLOAK_URL
