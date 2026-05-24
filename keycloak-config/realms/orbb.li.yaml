@@ -167,12 +167,19 @@ clients:
     serviceAccountsEnabled: false
     implicitFlowEnabled: false
     redirectUris:
-      # LAN test URLs. The Tailscale Funnel hostname will be added here
-      # once the funnel is configured; same for any cloudflared backup
-      # route. Keycloak (sslRequired=external) permits HTTP redirect
-      # URIs for RFC1918 addresses.
+      # Multi-path access: the same gate is reachable via any of these
+      # callback URLs. oauth2-proxy is configured WITHOUT a hardcoded
+      # OAUTH2_PROXY_REDIRECT_URL so it auto-derives the callback from
+      # the request's Host header — that means whichever URL the user
+      # hits, the callback comes back to the same host. Keycloak
+      # (sslRequired=external) permits HTTP redirect URIs for RFC1918
+      # and CGNAT (Tailscale 100.64.0.0/10) addresses.
+      #
+      # The Tailscale Funnel public hostname will be added here once
+      # the funnel is configured; same for any cloudflared route.
       - 'http://localhost:14180/*'
-      - 'http://192.168.88.254:14180/*'
+      - 'http://192.168.88.254:14180/*'    # LAN
+      - 'http://100.119.56.40:14180/*'     # Tailscale IP (this NAS)
     webOrigins:
       - '+'   # Reflect each redirect URI's origin
     defaultClientScopes:
