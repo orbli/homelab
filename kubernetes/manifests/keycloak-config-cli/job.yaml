@@ -39,9 +39,13 @@ spec:
           # Bump to 27 when upgrading Keycloak across major versions.
           image: adorsys/keycloak-config-cli:6.5.1-26
           env:
-            # Internal service — no public hostname needed.
+            # Internal service — no public hostname needed. Short name
+            # works because the Job runs in the iam namespace alongside
+            # Keycloak; k3s in this cluster uses a non-default DNS
+            # domain (home-hk1-cluster.orbb.li, not cluster.local), so
+            # the namespace-local short form is the portable choice.
             - name: KEYCLOAK_URL
-              value: http://keycloak-service.iam.svc.cluster.local:8080
+              value: http://keycloak-service:8080
             # Credentials sourced from the secret Ansible created during
             # Keycloak bootstrap. Never leave the cluster.
             - name: KEYCLOAK_USER
