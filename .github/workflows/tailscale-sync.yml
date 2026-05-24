@@ -1,0 +1,81 @@
+name: Sync Tailscale ACL
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'tailscale/**'
+      - '.github/workflows/tailscale-sync.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'tailscale/**'
+      - '.github/workflows/tailscale-sync.yml'
+  workflow_dispatch:
+
+# Installs the `gitops-pusher` binary from tailscale/tailscale and runs
+# it against the OAuth client whose credentials are in GH secrets
+# TS_API_CLIENT_ID + TS_API_CLIENT_SECRET. The binary auto-detects which
+# tailnet the OAuth client belongs to when --tailnet=-.
+#
+# Why not use the prebuilt tailscale/gitops-acl-action@v1: its current
+# version takes `audience` instead of `oauth-secret` because it expects
+# GitHub OIDC federation (no long-lived secret in GH; Tailscale OAuth
+# client trusts GH's OIDC issuer). That's the modern, more secure path,
+# but it requires additional Tailscale-side configuration. We can
+# migrate later — see README "Future direction".
+
+jobs:
+  acl-test:
+    name: Test ACL syntax + drift detect (PRs only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - name: Install gitops-pusher
+        run: go install tailscale.com/cmd/gitops-pusher@latest
+      - name: Test policy
+        env:
+          # gitops-pusher env names (current): TS_OAUTH_ID + TS_OAUTH_SECRET.
+          # GH secrets are stored with the older TS_API_CLIENT_* names from
+          # an earlier version of the tool; remap here so the secret values
+          # don't need to be rotated.
+          TS_OAUTH_ID: ${{ secrets.TS_API_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_API_CLIENT_SECRET }}
+          TS_TAILNET: ${{ secrets.TS_TAILNET }}
+        run: |
+          ~/go/bin/gitops-pusher \
+            --policy-file=./tailscale/acl.hujson \
+            --cache-file=./version-cache.json \
+            test
+
+  acl-apply:
+    name: Apply ACL to live tailnet (master only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - name: Install gitops-pusher
+        run: go install tailscale.com/cmd/gitops-pusher@latest
+      - name: Apply policy
+        env:
+          # gitops-pusher env names (current): TS_OAUTH_ID + TS_OAUTH_SECRET.
+          # GH secrets are stored with the older TS_API_CLIENT_* names from
+          # an earlier version of the tool; remap here so the secret values
+          # don't need to be rotated.
+          TS_OAUTH_ID: ${{ secrets.TS_API_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_API_CLIENT_SECRET }}
+          TS_TAILNET: ${{ secrets.TS_TAILNET }}
+        run: |
+          ~/go/bin/gitops-pusher \
+            --policy-file=./tailscale/acl.hujson \
+            --cache-file=./version-cache.json \
+            apply

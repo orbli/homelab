@@ -196,8 +196,9 @@ clients:
       # The Tailscale Funnel public hostname will be added here once
       # the funnel is configured; same for any cloudflared route.
       - 'http://localhost:14180/*'
-      - 'http://192.168.88.254:14180/*'    # LAN
-      - 'http://100.119.56.40:14180/*'     # Tailscale IP (this NAS)
+      - 'http://192.168.88.254:14180/*'                          # LAN IP (this NAS)
+      - 'http://100.119.56.40:14180/*'                           # Tailscale IP (this NAS)
+      - 'http://company-hk3-nas:14180/*'                         # Tailscale MagicDNS short name
     webOrigins:
       - '+'   # Reflect each redirect URI's origin
     defaultClientScopes:
