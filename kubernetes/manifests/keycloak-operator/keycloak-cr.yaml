@@ -7,11 +7,11 @@ spec:
   instances: 1
   # Custom image built by .github/workflows/build-keycloak.yml from the
   # adjacent Dockerfile. Bakes everything under themes/ into
-  # /opt/keycloak/themes/ of the upstream quay.io/keycloak/keycloak:26.3.3
-  # base. CI publishes :26.3.3 (always-current) plus :26.3.3-<timestamp>
-  # and :sha-<commit> immutable tags. The CR pins :26.3.3 + Always pull,
+  # /opt/keycloak/themes/ of the upstream quay.io/keycloak/keycloak:26.6.2
+  # base. CI publishes :26.6.2 (always-current) plus :26.6.2-<timestamp>
+  # and :sha-<commit> immutable tags. The CR pins :26.6.2 + Always pull,
   # so a fresh CI publish + pod rollout picks up new theme content.
-  image: ghcr.io/orbli/keycloak:26.3.3
+  image: ghcr.io/orbli/keycloak:26.6.2
   
   # Disable optimized flag to avoid startup issues
   startOptimized: false
@@ -77,7 +77,7 @@ spec:
       memory: 1Gi
 
   # Force a fresh image pull on every pod start. Custom themes are baked
-  # into the image now (see Dockerfile); the :26.3.3 tag is overwritten by
+  # into the image now (see Dockerfile); the :26.6.2 tag is overwritten by
   # CI on every theme change, so Always ensures pod rollouts pick up new
   # bits without us having to bump the tag in this file.
   unsupported:
