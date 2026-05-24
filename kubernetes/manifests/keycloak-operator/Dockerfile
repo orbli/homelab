@@ -13,7 +13,7 @@
 #      the theme into an image changes the Keycloak build hash at startup
 #      time for any non-trivial change, busting both the CDN cache and any
 #      browser-side cache automatically.
-FROM quay.io/keycloak/keycloak:26.3.3
+FROM quay.io/keycloak/keycloak:26.6.2
 
 # COPY runs as root in the build stage; the upstream image sets USER 1000
 # at the end, so the running pod has read-only access regardless of file

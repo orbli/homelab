@@ -42,8 +42,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=26.3.3
-            type=raw,value=26.3.3-{{date 'YYYYMMDDHHmmss'}}
+            type=raw,value=26.6.2
+            type=raw,value=26.6.2-{{date 'YYYYMMDDHHmmss'}}
             type=sha,format=long,prefix=sha-
             type=raw,value=latest
 
