@@ -13,17 +13,27 @@ on:
       - '.github/workflows/tailscale-sync.yml'
   workflow_dispatch:
 
-# Installs the `gitops-pusher` binary from tailscale/tailscale and runs
-# it against the OAuth client whose credentials are in GH secrets
-# TS_API_CLIENT_ID + TS_API_CLIENT_SECRET. The binary auto-detects which
-# tailnet the OAuth client belongs to when --tailnet=-.
+# Installs the `gitops-pusher` binary from tailscale/tailscale (pinned
+# to a specific Tailscale release tag) and runs it against the OAuth
+# client whose credentials are in GH secrets TS_API_CLIENT_ID +
+# TS_API_CLIENT_SECRET. Tailnet name comes from TS_TAILNET secret.
 #
-# Why not use the prebuilt tailscale/gitops-acl-action@v1: its current
-# version takes `audience` instead of `oauth-secret` because it expects
-# GitHub OIDC federation (no long-lived secret in GH; Tailscale OAuth
-# client trusts GH's OIDC issuer). That's the modern, more secure path,
-# but it requires additional Tailscale-side configuration. We can
-# migrate later — see README "Future direction".
+# Why pin the version: gitops-pusher's env-var names and behavior have
+# changed across Tailscale releases (e.g. TS_API_CLIENT_* renamed to
+# TS_OAUTH_*). Pinning ensures the workflow continues to work without
+# manual fix-ups when Tailscale ships breaking changes upstream. Bump
+# the tag periodically as part of routine maintenance.
+#
+# Why actions/cache: gitops-pusher stores the last-known control etag
+# in version-cache.json. Without persistence between runs, every run
+# reports "no previous etag found" and refuses to push as a safety
+# measure (see https://pkg.go.dev/tailscale.com/cmd/gitops-pusher).
+# We restore the previous run's cache and save the updated one back.
+# Cache key includes run_id (mandatory unique key on save) with a
+# restore-key prefix that matches any prior cache.
+
+env:
+  TS_VERSION: v1.98.3
 
 jobs:
   acl-test:
@@ -36,8 +46,15 @@ jobs:
         with:
           go-version: 'stable'
           cache: false
+      - name: Restore version-cache.json
+        uses: actions/cache@v4
+        with:
+          path: ./version-cache.json
+          key: ts-acl-cache-${{ github.run_id }}
+          restore-keys: |
+            ts-acl-cache-
       - name: Install gitops-pusher
-        run: go install tailscale.com/cmd/gitops-pusher@latest
+        run: go install tailscale.com/cmd/gitops-pusher@${{ env.TS_VERSION }}
       - name: Test policy
         env:
           # gitops-pusher env names (current): TS_OAUTH_ID + TS_OAUTH_SECRET.
@@ -63,14 +80,17 @@ jobs:
         with:
           go-version: 'stable'
           cache: false
+      - name: Restore version-cache.json
+        uses: actions/cache@v4
+        with:
+          path: ./version-cache.json
+          key: ts-acl-cache-${{ github.run_id }}
+          restore-keys: |
+            ts-acl-cache-
       - name: Install gitops-pusher
-        run: go install tailscale.com/cmd/gitops-pusher@latest
+        run: go install tailscale.com/cmd/gitops-pusher@${{ env.TS_VERSION }}
       - name: Apply policy
         env:
-          # gitops-pusher env names (current): TS_OAUTH_ID + TS_OAUTH_SECRET.
-          # GH secrets are stored with the older TS_API_CLIENT_* names from
-          # an earlier version of the tool; remap here so the secret values
-          # don't need to be rotated.
           TS_OAUTH_ID: ${{ secrets.TS_API_CLIENT_ID }}
           TS_OAUTH_SECRET: ${{ secrets.TS_API_CLIENT_SECRET }}
           TS_TAILNET: ${{ secrets.TS_TAILNET }}
