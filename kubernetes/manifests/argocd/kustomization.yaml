@@ -23,15 +23,13 @@ resources:
 
 # Strategic merge patches for better compatibility
 patches:
-# Enable Helm support in Kustomize
-- patch: |-
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: argocd-cm
-      namespace: gitops
-    data:
-      kustomize.buildOptions: "--enable-helm"
+# Patches argocd-cm with kustomize.buildOptions = "--enable-helm
+# --load-restrictor=LoadRestrictionsNone". Loaded from the standalone
+# file so the patch content is visible/editable without nested inline
+# YAML and so its diffs are clean. Previously the patch was inlined
+# here AND duplicated in argocd-cm-patch.yaml as a dead file; the
+# standalone file is now the source of truth.
+- path: argocd-cm-patch.yaml
   target:
     kind: ConfigMap
     name: argocd-cm
