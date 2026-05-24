@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-config-cli
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: keycloak-config-cli
+    app.kubernetes.io/part-of: keycloak
+  annotations:
+    # Sync wave 60 runs after the keycloak-operator app (wave 50-ish)
+    # has Keycloak up and reachable. The PostSync hook in job.yaml
+    # additionally waits for in-sync state of all regular resources
+    # before firing the reconciliation Job.
+    argocd.argoproj.io/sync-wave: "60"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/orbli/homelab.git
+    targetRevision: master
+    path: kubernetes/manifests/keycloak-config-cli
+    kustomize: {}
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: iam
+
+  syncPolicy:
+    automated:
+      prune: true
+      # Self-heal is safe here: the only live resources we manage are
+      # the hashed ConfigMap (regenerated on every YAML edit) and the
+      # PostSync Job (recreated by ArgoCD on every sync). Neither is
+      # something a human should be editing in-cluster by hand. If
+      # someone does, reverting to git is the correct response.
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=false
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

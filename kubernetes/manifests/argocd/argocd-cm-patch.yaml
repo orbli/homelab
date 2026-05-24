@@ -5,6 +5,11 @@ metadata:
   name: argocd-cm
   namespace: gitops
 data:
-  # Enable Helm support for Kustomize builds
-  # This allows ArgoCD to process Helm charts referenced in Kustomization files
-  kustomize.buildOptions: "--enable-helm"
+  # Kustomize build options applied globally to every Application's render.
+  #   --enable-helm: allow `helmCharts:` in kustomization.yaml.
+  #   --load-restrictor=LoadRestrictionsNone: allow configMapGenerator
+  #     files= to reference paths outside the kustomization root. Needed
+  #     so kubernetes/manifests/keycloak-config-cli/ can read the realm
+  #     YAML from keycloak-config/realms/, keeping the data file at a
+  #     human-friendly path while the delivery mechanism lives elsewhere.
+  kustomize.buildOptions: "--enable-helm --load-restrictor=LoadRestrictionsNone"

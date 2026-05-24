@@ -1,0 +1,189 @@
+# Keycloak realm config-as-code for orbb.li
+#
+# This file is reconciled into the live realm by keycloak-config-cli, run
+# from .github/workflows/keycloak-sync.yml on every push to master that
+# touches keycloak-config/**.
+#
+# Ownership boundary (matches CLAUDE.md "Deployment pattern"):
+#   - Realm bootstrap (login flows, identity providers, themes, SMTP) is
+#     owned by Ansible's KeycloakRealmImport. Do NOT redeclare those
+#     fields here — keycloak-config-cli would reset them to defaults if
+#     we did, since it reconciles each declared field rather than merging.
+#   - Per-app OAuth clients with generated secrets (remark42, grafana,
+#     filebrowser-gate, ...) are owned by Ansible's
+#     keycloak-oauth-client-create.yaml.j2 template. The CI run uses
+#     IMPORT_MANAGED_CLIENT=no-delete so we don't touch them.
+#   - This file owns: groups, users, group memberships, custom client
+#     scopes, custom protocol mappers.
+
+realm: orbb.li
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Groups: authoritative source for who's in what group.
+# IMPORT_MANAGED_GROUP=full in the CI workflow means anything not declared
+# here gets DELETED from the realm. Keep this list complete.
+# ---------------------------------------------------------------------------
+groups:
+  - name: mgroup
+
+# ---------------------------------------------------------------------------
+# Users: pre-created so they exist before Google IdP federates them in.
+# Google federation links to existing users by email match, so the
+# email field below must match what Google returns as the user's email.
+# No credentials are declared — local password auth is unused; the user
+# proves identity through Google. IMPORT_MANAGED_USER=no-delete so this
+# list is additive (removing someone disables their group memberships
+# but does not delete the user record or their data).
+# ---------------------------------------------------------------------------
+users:
+  # Username deliberately differs from email: this realm's existing user
+  # record has username 'orb.li' (chosen during the original First Broker
+  # Login Review Profile step) with email 'mail@orbb.li'. Google IdP
+  # federation linking matches by EMAIL (not username), so the pre-existing
+  # federation link survives this declarative reconciliation. Setting
+  # username to anything else here would create a duplicate user and fail
+  # under realm setting duplicateEmailsAllowed=false.
+  - username: orb.li
+    email: mail@orbb.li
+    enabled: true
+    emailVerified: true
+    groups:
+      - mgroup
+
+# ---------------------------------------------------------------------------
+# Custom client scope that holds the protocol mappers we want
+# filebrowser-gate (and any future similar oauth2-proxy client) to use.
+#
+# Two mappers:
+#   1. oidc-audience-mapper: adds 'filebrowser-gate' to the access
+#      token's aud claim. Without this, oauth2-proxy rejects the token
+#      because Keycloak's default aud is [realm-management account].
+#   2. oidc-group-membership-mapper: emits the user's groups as a
+#      'groups' claim in id_token + access_token + userinfo. Needed for
+#      oauth2-proxy's OAUTH2_PROXY_ALLOWED_GROUPS=mgroup check.
+#
+# This scope must be attached to filebrowser-gate as a default client
+# scope. That's done once via kcadm — see keycloak-config/README.md
+# section "One-time bootstrap steps".
+# ---------------------------------------------------------------------------
+clientScopes:
+  - name: filebrowser-gate-extras
+    description: 'Audience + group-membership mappers for the filebrowser-gate OIDC client (oauth2-proxy)'
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: 'true'
+      display.on.consent.screen: 'false'
+    protocolMappers:
+      - name: audience-filebrowser-gate
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.client.audience: filebrowser-gate
+          id.token.claim: 'false'
+          access.token.claim: 'true'
+      - name: groups
+        protocol: openid-connect
+        protocolMapper: oidc-group-membership-mapper
+        consentRequired: false
+        config:
+          full.path: 'false'
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+          claim.name: groups
+
+# ---------------------------------------------------------------------------
+# Clients: declarative shape (redirect URIs, flows, scopes) lives here;
+# secret value stays in Keycloak + the per-app k8s Secret in the
+# consuming namespace (originally minted by Ansible's
+# keycloak-oauth-client-create.yaml.j2 template).
+#
+# CRITICAL: the `secret` field is intentionally OMITTED on every entry
+# below. keycloak-config-cli's documented behaviour is to leave the
+# existing secret untouched when the field is omitted. Declaring an
+# empty or stale value would overwrite the live secret and break every
+# app currently using it until the per-app k8s Secret is rotated to
+# match.
+#
+# To rotate a secret today: rotate in Keycloak (UI or kcadm), then
+# update the matching k8s Secret in the app namespace. See README
+# "Rotating a client secret".
+# ---------------------------------------------------------------------------
+clients:
+  - clientId: remark42
+    name: Remark42
+    description: 'Comments-system OAuth client (remark42-lab.orbb.li)'
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: true
+    serviceAccountsEnabled: false
+    implicitFlowEnabled: false
+    redirectUris:
+      - https://remark42-lab.orbb.li/auth/keycloak/callback
+    webOrigins:
+      - https://remark42-lab.orbb.li
+    defaultClientScopes:
+      - profile
+      - roles
+      - email
+    optionalClientScopes:
+      - address
+      - phone
+
+  - clientId: grafana
+    name: Grafana
+    description: 'Grafana OAuth client (grafana-lab.orbb.li)'
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: true
+    serviceAccountsEnabled: false
+    implicitFlowEnabled: false
+    redirectUris:
+      - https://grafana-lab.orbb.li/login/generic_oauth
+    webOrigins:
+      - https://grafana-lab.orbb.li
+    defaultClientScopes:
+      - profile
+      - roles
+      - email
+    optionalClientScopes:
+      - address
+      - phone
+
+  - clientId: filebrowser-gate
+    name: Filebrowser Gate
+    description: 'oauth2-proxy in front of filebrowser on the NAS'
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    implicitFlowEnabled: false
+    redirectUris:
+      # LAN test URLs. The Tailscale Funnel hostname will be added here
+      # once the funnel is configured; same for any cloudflared backup
+      # route. Keycloak (sslRequired=external) permits HTTP redirect
+      # URIs for RFC1918 addresses.
+      - 'http://localhost:14180/*'
+      - 'http://192.168.88.254:14180/*'
+    webOrigins:
+      - '+'   # Reflect each redirect URI's origin
+    defaultClientScopes:
+      - profile
+      - roles
+      - email
+      # Pulls in the audience-mapper (fixes the oauth2-proxy 500) and
+      # the groups-membership mapper (feeds OAUTH2_PROXY_ALLOWED_GROUPS).
+      # Replaces the previous manual `kcadm update default-client-scopes`
+      # bootstrap step.
+      - filebrowser-gate-extras
+    optionalClientScopes:
+      - address
+      - phone

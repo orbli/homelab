@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: iam
+
+# Wrap the human-edited realm YAML in a ConfigMap. The default
+# hash-suffix behaviour is critical here: any edit to the YAML produces
+# a new ConfigMap name (e.g. keycloak-realm-config-7d8f2c), which makes
+# the Job below reference a different ConfigMap, which makes the whole
+# Job manifest differ from what's live, which triggers ArgoCD to re-run
+# the Job. This is the standard "re-run a Job when its inputs change"
+# GitOps idiom.
+#
+# The files= path traverses out of this directory; that requires
+# kustomize.buildOptions to include --load-restrictor=LoadRestrictionsNone,
+# which is set in kubernetes/manifests/argocd/argocd-cm-patch.yaml.
+configMapGenerator:
+  - name: keycloak-realm-config
+    files:
+      - orbb.li.yaml=../../../keycloak-config/realms/orbb.li.yaml
+
+resources:
+  - job.yaml
