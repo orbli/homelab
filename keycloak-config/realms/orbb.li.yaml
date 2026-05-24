@@ -68,8 +68,36 @@ users:
 # section "One-time bootstrap steps".
 # ---------------------------------------------------------------------------
 clientScopes:
+  # Generic, OIDC-conventional 'groups' scope. oauth2-proxy auto-adds
+  # 'groups' to its requested scope list when OAUTH2_PROXY_ALLOWED_GROUPS
+  # is set; without a client scope named exactly 'groups', Keycloak
+  # rejects the request with invalid_scope. Naming this scope 'groups'
+  # also makes it reusable by any future client that wants the claim
+  # (Grafana RBAC, etc.) without bespoke per-client scopes.
+  - name: groups
+    description: 'Emits the user''s group memberships as a `groups` claim'
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: 'true'
+      display.on.consent.screen: 'false'
+    protocolMappers:
+      - name: groups
+        protocol: openid-connect
+        protocolMapper: oidc-group-membership-mapper
+        consentRequired: false
+        config:
+          full.path: 'false'
+          id.token.claim: 'true'
+          access.token.claim: 'true'
+          userinfo.token.claim: 'true'
+          claim.name: groups
+
+  # Client-specific scope holding only the audience mapper for
+  # filebrowser-gate. Adds 'filebrowser-gate' to the access token's
+  # aud claim — fixes oauth2-proxy's audience-validation rejection
+  # (which expects the token's aud to contain its own client_id).
   - name: filebrowser-gate-extras
-    description: 'Audience + group-membership mappers for the filebrowser-gate OIDC client (oauth2-proxy)'
+    description: 'Audience mapper for the filebrowser-gate OIDC client (oauth2-proxy)'
     protocol: openid-connect
     attributes:
       include.in.token.scope: 'true'
@@ -83,16 +111,6 @@ clientScopes:
           included.client.audience: filebrowser-gate
           id.token.claim: 'false'
           access.token.claim: 'true'
-      - name: groups
-        protocol: openid-connect
-        protocolMapper: oidc-group-membership-mapper
-        consentRequired: false
-        config:
-          full.path: 'false'
-          id.token.claim: 'true'
-          access.token.claim: 'true'
-          userinfo.token.claim: 'true'
-          claim.name: groups
 
 # ---------------------------------------------------------------------------
 # Clients: declarative shape (redirect URIs, flows, scopes) lives here;
@@ -186,10 +204,15 @@ clients:
       - profile
       - roles
       - email
-      # Pulls in the audience-mapper (fixes the oauth2-proxy 500) and
-      # the groups-membership mapper (feeds OAUTH2_PROXY_ALLOWED_GROUPS).
-      # Replaces the previous manual `kcadm update default-client-scopes`
-      # bootstrap step.
+      # 'groups' scope emits the user's group memberships as the
+      # 'groups' claim — feeds oauth2-proxy's OAUTH2_PROXY_ALLOWED_GROUPS
+      # check. The scope must be named exactly 'groups' because
+      # oauth2-proxy auto-requests that scope name (Keycloak responds
+      # invalid_scope if a client scope by that name doesn't exist).
+      - groups
+      # Adds 'filebrowser-gate' to the access token's aud claim;
+      # fixes oauth2-proxy's audience-validation rejection (the 500
+      # we saw on the very first end-to-end login attempt).
       - filebrowser-gate-extras
     optionalClientScopes:
       - address
