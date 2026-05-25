@@ -10,17 +10,12 @@
 
 {
     // ------------------------------------------------------------------
-    // Groups: user collections for use in acls/ssh rules.
+    // Groups: user collections for use in acls/ssh rules. Currently
+    // empty — filebrowser-gate access is granted to autogroup:member
+    // (any tailnet member) at the network layer; application-layer
+    // gating (Keycloak realm + mgroup) is the actual authorization.
     // ------------------------------------------------------------------
-    "groups": {
-        // Friends with filebrowser access. Two-layer gating: ACL gets
-        // their device a TCP path to company-hk3-nas:14180, then
-        // oauth2-proxy + Keycloak gate the HTTP request itself.
-        "group:mgroup": [
-            // Populate as you onboard. Example:
-            // "alice@gmail.com",
-        ],
-    },
+    "groups": {},
 
     // ------------------------------------------------------------------
     // Tag owners: which principals can apply each tag to devices.
@@ -73,14 +68,18 @@
             "dst": ["*:*"],
         },
 
-        // group:mgroup: STRICTLY filebrowser-gate's port. Friends can
-        // open a TCP connection to nothing else on the NAS or in the
-        // tailnet (no SSH, no jellyfin, no Container Station UI, no
-        // QNAP admin UI, nothing). Application-layer auth (Keycloak +
-        // oauth2-proxy) gates the HTTP request itself.
+        // Filebrowser-gate's port: open to any tailnet member at the
+        // network layer. The actual authorization is at the application
+        // layer (oauth2-proxy + Keycloak; only users in the Keycloak
+        // mgroup realm group get past the OIDC check). This makes the
+        // tailnet-side rule simple — anyone you invite to the tailnet
+        // gets HTTP reachability to the gate; the gate then makes the
+        // accept/deny call per-user. No SSH, no jellyfin, no Container
+        // Station UI, no QNAP admin UI, no other port on the NAS is
+        // exposed by this rule.
         {
             "action": "accept",
-            "src": ["group:mgroup"],
+            "src": ["autogroup:member"],
             "dst": ["company-hk3-nas:14180"],
         },
 
