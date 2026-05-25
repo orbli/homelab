@@ -33,6 +33,12 @@
         "tag:k8s":          ["tag:k8s-operator"],
         "tag:k8s-host":     ["autogroup:admin"],
         "tag:exit-node":    ["autogroup:admin"],
+        // tag:homelab marks "my home infrastructure" devices that
+        // should also serve as exit nodes for the rest of the tailnet
+        // (see autoApprovers.exitNode + the autogroup:internet ACL
+        // rule below). Owner restricted to mail@orbb.li — no one else
+        // can assert this tag.
+        "tag:homelab":      ["mail@orbb.li"],
     },
 
     // ------------------------------------------------------------------
@@ -51,7 +57,8 @@
         // Admins (you + zura35) AND all tagged infra machines:
         // unrestricted access tailnet-wide. Tagged machines need full
         // reach because they are k8s nodes / the tailscale-connector
-        // pod that needs to talk to anything inside the cluster.
+        // pod / homelab infra that needs to talk to anything inside
+        // the cluster.
         {
             "action": "accept",
             "src": [
@@ -61,6 +68,7 @@
                 "tag:k8s",
                 "tag:k8s-host",
                 "tag:exit-node",
+                "tag:homelab",
             ],
             "dst": ["*:*"],
         },
@@ -74,6 +82,21 @@
             "action": "accept",
             "src": ["group:mgroup"],
             "dst": ["company-hk3-nas:14180"],
+        },
+
+        // All tailnet members can use ANY designated exit node for
+        // their internet-bound traffic. `autogroup:internet` is the
+        // canonical Tailscale destination for "route through this
+        // device to the public internet" — it grants ONLY internet
+        // pipe-through, NOT port access to the exit-node device. So
+        // a member running `tailscale up --exit-node=<a-homelab-host>`
+        // can route their internet through it, but cannot reach the
+        // homelab device's own SSH/HTTP/anything on any port. Port
+        // access is governed by other rules above (default deny).
+        {
+            "action": "accept",
+            "src": ["autogroup:member"],
+            "dst": ["autogroup:internet:*"],
         },
     ],
 
@@ -95,7 +118,7 @@
         {
             "action": "check",
             "src":    ["autogroup:admin"],
-            "dst":    ["tag:k8s-host", "tag:exit-node"],
+            "dst":    ["tag:k8s-host", "tag:exit-node", "tag:homelab"],
             "users":  ["autogroup:nonroot", "root"],
         },
     ],
@@ -117,6 +140,13 @@
             "10.42.0.0/16": ["mail@orbb.li", "tag:k8s"],
             "10.43.0.0/16": ["mail@orbb.li", "tag:k8s"],
         },
+        // Auto-approve any tag:homelab device's exit-node assertion.
+        // Without this, an admin would have to click "approve" in
+        // the Tailscale admin console each time a tag:homelab device
+        // (re)joins the tailnet or restarts and re-asserts itself as
+        // an exit node. With it, the autogroup:member->internet ACL
+        // above can use these devices as exit nodes immediately.
+        "exitNode": ["tag:homelab"],
     },
 
     // ------------------------------------------------------------------
