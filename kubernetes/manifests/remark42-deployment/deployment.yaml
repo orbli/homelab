@@ -27,11 +27,15 @@ spec:
         fsGroup: 1001
       containers:
       - name: remark42
-        # Pinned to a master-branch digest because custom OAuth (AUTH_CUSTOM_*),
-        # which we need to talk to Keycloak, was not in the v1.15.0 release.
-        # Bump deliberately: pull `umputun/remark42:master`, capture the digest
-        # with `docker inspect`, paste it here.
-        image: umputun/remark42:master@sha256:a1935487c5d55b01f42ee7e56a7717a11e7b01476699dfdf9cdec3060996e51a
+        # Pinned to v1.16.0, the first numbered release to ship the custom OAuth2
+        # provider (AUTH_CUSTOM_*, upstream #2006) we need to talk to Keycloak.
+        # Until v1.16.0 we tracked `master` because v1.15.0 lacked that feature.
+        # v1.16.0 also patches several security bugs (OAuth open-redirect, SSRF,
+        # path traversal, stored XSS).
+        # Bump deliberately: HEAD the registry manifest for the multi-arch index
+        # digest (`docker buildx imagetools inspect umputun/remark42:vX.Y.Z`) and
+        # paste it here.
+        image: umputun/remark42:v1.16.0@sha256:b24ab1b8e0b5db650c44adc559c2ca24448baae7ca70c36fc2e7550130609e82
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
