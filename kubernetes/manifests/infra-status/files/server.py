@@ -129,7 +129,7 @@ def k3s_node():
         mets.append(["pods", str(npods)])
     if cores is not None:
         mets.append(["cores", str(round(cores))])
-    return {"name": "k3s cluster", "role": f"{len(items)}× Pi · HA control-plane",
+    return {"name": "k3s cluster", "role": f"{len(items)}× Pi · 16 GB",
             "status": "ok" if ready == len(items) and items else "warn",
             "pill": f"{ready}/{len(items)} ready", "metrics": mets}
 
@@ -162,7 +162,7 @@ def nomad():
         jobs = jget(NOMAD + "/v1/jobs?region=" + urllib.parse.quote(r)) or []
         njobs += len(jobs)
         running += sum(1 for j in jobs if j.get("Status") == "running")
-    return {"name": "Nomad", "role": "cross-region federation",
+    return {"name": "Nomad", "role": "federation",
             "status": "ok" if ready == total and total else "warn",
             "pill": f"{ready}/{total} ready",
             "metrics": [["regions", str(len(regions))], ["nodes", str(total)],
