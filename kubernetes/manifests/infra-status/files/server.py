@@ -161,10 +161,11 @@ def k3s_panel():
     if v["mhz"] is not None:  mets.append(["freq", f"{round(v['mhz'])} MHz"])
     if v["fan"] is not None:  mets.append(["fan", f"{round(v['fan'])} rpm"])
     if v["load"] is not None: mets.append(["load", f"{v['load']:.1f}"])
-    if v["dr"] is not None or v["dw"] is not None:
-        mets.append(["disk r/w", f"{human_bps(v['dr'])} · {human_bps(v['dw'])}"])
-    if v["nr"] is not None or v["nt"] is not None:
-        mets.append(["net ↓/↑", f"{human_bps(v['nr'])} · {human_bps(v['nt'])}"])
+    # separate cells (not "X · Y") so each short value fits its grid cell
+    if v["dr"] is not None: mets.append(["disk ↓", human_bps(v["dr"])])
+    if v["dw"] is not None: mets.append(["disk ↑", human_bps(v["dw"])])
+    if v["nr"] is not None: mets.append(["net ↓", human_bps(v["nr"])])
+    if v["nt"] is not None: mets.append(["net ↑", human_bps(v["nt"])])
     if npods is not None:      mets.append(["pods", str(npods)])
     if v["cores"] is not None: mets.append(["cores", str(round(v["cores"]))])
     if v["store"] is not None: mets.append(["storage", f"{v['store']:.1f} TB"])
