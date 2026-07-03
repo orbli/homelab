@@ -142,16 +142,24 @@ def argocd():
 
 
 def nomad():
-    ns = jget(NOMAD + "/v1/nodes")
-    if ns is None:
+    # Nomad is federated across regions (hk/jp/us); /v1/nodes only returns the
+    # queried server's region, so aggregate over every region. Region names are
+    # intentionally NOT emitted — only counts (no geo).
+    regions = jget(NOMAD + "/v1/regions")
+    if not regions:
         return None
-    ready = sum(1 for n in ns if n.get("Status") == "ready")
-    jobs = jget(NOMAD + "/v1/jobs") or []
-    running = sum(1 for j in jobs if j.get("Status") == "running")
-    return {"name": "Nomad", "role": "second orchestrator",
-            "status": "ok" if ready == len(ns) and ns else "warn",
-            "pill": f"{ready}/{len(ns)} ready",
-            "metrics": [["nodes", str(len(ns))], ["jobs", str(len(jobs))],
+    total = ready = njobs = running = 0
+    for r in regions:
+        nodes = jget(NOMAD + "/v1/nodes?region=" + urllib.parse.quote(r)) or []
+        total += len(nodes)
+        ready += sum(1 for n in nodes if n.get("Status") == "ready")
+        jobs = jget(NOMAD + "/v1/jobs?region=" + urllib.parse.quote(r)) or []
+        njobs += len(jobs)
+        running += sum(1 for j in jobs if j.get("Status") == "running")
+    return {"name": "Nomad", "role": "cross-region orchestrator",
+            "status": "ok" if ready == total and total else "warn",
+            "pill": f"{ready}/{total} ready",
+            "metrics": [["regions", str(len(regions))], ["nodes", str(total)],
                         ["running", str(running)]]}
 
 
@@ -185,10 +193,7 @@ def build_snapshot():
     return {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "compute": compute(),
-        "nodes": [x for x in (k3s_node(), nomad(),
-                              {"name": "Home Assistant", "role": "Cantonese LLM voice",
-                               "status": "ok", "pill": "up", "metrics": [["kind", "home-automation"]]})
-                  if x],
+        "nodes": [x for x in (k3s_node(), nomad()) if x],
         "platform": [x for x in ([argocd()] + platform()) if x],
         "cloud": cloud(),
     }
