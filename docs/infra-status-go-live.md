@@ -8,17 +8,21 @@ Everything below is the ONLY remaining work — build, manifests, egress, Hugo
 page and the `--metrics` flag are already done and validated. Ordered so nothing
 ships broken (cluster first, verify, then the public site).
 
-## 1. DNS — create the hostname (needs Cloudflare access)
+## 1. Cloudflare Zero Trust — add the Public Hostname (needs Cloudflare access)
 
-`infra-lab.orbb.li` does not resolve yet; `-lab` hosts use per-host CNAMEs, not a
-wildcard. SSL is already covered by the `*.orbb.li` cert.
+The tunnel is REMOTELY-managed: the local ConfigMap ingress is documentation
+only (proven — a locally-added route did not appear in the runtime `version=N`
+config). Routing AND DNS are driven from the dashboard:
 
-```bash
-# Option A — cloudflared CLI (creates the proxied CNAME to the tunnel):
-cloudflared tunnel route dns home-hk1-cluster-tunnel infra-lab.orbb.li
-# Option B — Cloudflare dashboard: DNS → add CNAME
-#   infra-lab → <tunnel-id>.cfargotunnel.com , Proxied (orange cloud)
-```
+> Zero Trust → Networks → Tunnels → `home-hk1-cluster-tunnel` → Public Hostnames
+> → **Add a public hostname**
+> - Subdomain: `infra-lab`  Domain: `orbb.li`
+> - Service type: `HTTP`
+> - URL: `infra-status.infra-status.svc.home-hk1-cluster.orbb.li:80`
+> - Additional application settings → TLS → **No TLS Verify: ON**
+> - **Save** (this also auto-creates the DNS CNAME — no separate DNS step).
+
+SSL is already covered by the existing `*.orbb.li` cert.
 
 ## 2. Push homelab + register the new ArgoCD apps
 
@@ -38,16 +42,17 @@ kubectl apply -f kubernetes/argocd/infra-status/
 ArgoCD then syncs: the 3 egress Services, the collector Deployment/Service/RBAC,
 and the updated cloudflared ConfigMap (route added before the 404 fallback).
 
-## 3. Roll cloudflared to pick up the route
+## 3. (Not needed for routing) cloudflared rollout
 
-cloudflared does NOT hot-reload a mounted-ConfigMap change.
+Routing is driven by the dashboard (step 1), not the ConfigMap, so no rollout is
+required to serve `infra-lab`. Roll only if you want the pods to re-read the
+doc-only ConfigMap:
 
 ```bash
 kubectl -n ingress rollout restart deployment/cloudflared
-kubectl -n ingress rollout status deployment/cloudflared
 ```
 
-## 4. Verify the backend is public
+## 4. Verify the backend is public (after step 1's Save)
 
 ```bash
 curl -s https://infra-lab.orbb.li/infra.json | head -c 400   # expect the JSON
