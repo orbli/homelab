@@ -162,7 +162,7 @@ def nomad():
         jobs = jget(NOMAD + "/v1/jobs?region=" + urllib.parse.quote(r)) or []
         njobs += len(jobs)
         running += sum(1 for j in jobs if j.get("Status") == "running")
-    return {"name": "Nomad", "role": "cross-region orchestrator",
+    return {"name": "Nomad federation", "role": "cross-region orchestrator",
             "status": "ok" if ready == total and total else "warn",
             "pill": f"{ready}/{total} ready",
             "metrics": [["regions", str(len(regions))], ["nodes", str(total)],
