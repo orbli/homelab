@@ -154,19 +154,28 @@ def nomad():
     regions = jget(NOMAD + "/v1/regions")
     if not regions:
         return None
-    total = ready = njobs = running = 0
+    total = ready = running = cores = memmb = 0
     for r in regions:
-        nodes = jget(NOMAD + "/v1/nodes?region=" + urllib.parse.quote(r)) or []
+        rq = urllib.parse.quote(r)
+        nodes = jget(NOMAD + "/v1/nodes?region=" + rq) or []
         total += len(nodes)
         ready += sum(1 for n in nodes if n.get("Status") == "ready")
-        jobs = jget(NOMAD + "/v1/jobs?region=" + urllib.parse.quote(r)) or []
-        njobs += len(jobs)
+        for n in nodes:  # per-node capacity → aggregate fleet size
+            det = jget(NOMAD + "/v1/node/%s?region=%s" % (n.get("ID", ""), rq))
+            nr = (det or {}).get("NodeResources", {})
+            cores += (nr.get("Cpu") or {}).get("TotalCpuCores") or 0
+            memmb += (nr.get("Memory") or {}).get("MemoryMB") or 0
+        jobs = jget(NOMAD + "/v1/jobs?region=" + rq) or []
         running += sum(1 for j in jobs if j.get("Status") == "running")
+    mets = [["regions", str(len(regions))], ["nodes", str(total)]]
+    if cores:
+        mets.append(["cores", str(cores)])
+    if memmb:
+        mets.append(["mem", f"{round(memmb/1024)} GB"])
+    mets.append(["running", str(running)])
     return {"name": "Nomad", "role": "federation",
             "status": "ok" if ready == total and total else "warn",
-            "pill": f"{ready}/{total} ready",
-            "metrics": [["regions", str(len(regions))], ["nodes", str(total)],
-                        ["running", str(running)]]}
+            "pill": f"{ready}/{total} ready", "metrics": mets}
 
 
 def qnap():
