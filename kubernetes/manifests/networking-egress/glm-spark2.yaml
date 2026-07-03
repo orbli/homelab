@@ -1,0 +1,11 @@
+# Egress to the second GB10 (RPC peer in the pooled GLM-5.2 serving).
+apiVersion: v1
+kind: Service
+metadata:
+  name: glm-spark2
+  namespace: networking
+  annotations:
+    tailscale.com/tailnet-ip: "100.112.234.109"
+spec:
+  type: ExternalName
+  externalName: placeholder

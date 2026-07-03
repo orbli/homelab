@@ -1,0 +1,15 @@
+# Tailscale operator EGRESS: in-cluster Service -> tailnet device.
+# The operator watches the tailnet-ip annotation, spins up a proxy Pod, and
+# rewrites spec.externalName to the proxy's FQDN (hence the ignoreDifferences
+# on /spec/externalName in the ArgoCD app — the placeholder below is expected
+# to be overwritten). In-cluster consumers reach spark1 at glm-spark1:8000.
+apiVersion: v1
+kind: Service
+metadata:
+  name: glm-spark1
+  namespace: networking
+  annotations:
+    tailscale.com/tailnet-ip: "100.99.244.49"
+spec:
+  type: ExternalName
+  externalName: placeholder

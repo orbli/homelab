@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: infra-status
+
+resources:
+- namespace.yaml
+- rbac.yaml
+- service.yaml
+- deployment.yaml
+
+# server.py lives in files/ as the single source of truth. The generated
+# ConfigMap gets a content-hash suffix, so editing the script rolls the
+# Deployment automatically on the next sync (no manual restart).
+configMapGenerator:
+- name: infra-status-src
+  files:
+  - files/server.py
+
+# labels (not commonLabels) with includeSelectors:false — the Deployment
+# selector is immutable, so the managed-by label must not be injected into it.
+labels:
+- pairs:
+    app.kubernetes.io/managed-by: argocd
+  includeSelectors: false

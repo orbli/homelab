@@ -1,0 +1,32 @@
+# The collector reads cluster state (nodes, pods, ArgoCD Applications) to build
+# its snapshot. Read-only, cluster-scoped, and nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: infra-status
+  namespace: infra-status
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: infra-status-reader
+rules:
+- apiGroups: [""]
+  resources: [nodes, pods, namespaces]
+  verbs: [get, list]
+- apiGroups: ["argoproj.io"]
+  resources: [applications]
+  verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: infra-status-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: infra-status-reader
+subjects:
+- kind: ServiceAccount
+  name: infra-status
+  namespace: infra-status

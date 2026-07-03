@@ -37,4 +37,8 @@ data:
       service: http://remark42.default.svc.home-hk1-cluster.orbb.li:80
       originRequest:
         noTLSVerify: true
+    - hostname: infra-lab.orbb.li
+      service: http://infra-status.infra-status.svc.home-hk1-cluster.orbb.li:80
+      originRequest:
+        noTLSVerify: true
     - service: http_status:404

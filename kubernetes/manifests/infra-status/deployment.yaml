@@ -1,0 +1,42 @@
+# infra-status: serves a sanitized live snapshot of the estate over HTTP.
+# Reached publicly only via the cloudflared tunnel (outbound-only; the home
+# network is never in the request path). See files/server.py for the privacy
+# rule — only counts, pretty labels and aggregate metrics ever leave the pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infra-status
+  namespace: infra-status
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: infra-status
+  template:
+    metadata:
+      labels:
+        app: infra-status
+    spec:
+      serviceAccountName: infra-status
+      containers:
+      - name: server
+        image: python:3.12-slim
+        command: ["python3", "/src/server.py"]
+        env:
+        - {name: TTL, value: "30"}
+        - {name: PORT, value: "8080"}
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8080}
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        resources:
+          requests: {cpu: 25m, memory: 48Mi}
+          limits: {cpu: 250m, memory: 128Mi}
+        volumeMounts:
+        - {name: src, mountPath: /src}
+      volumes:
+      - name: src
+        configMap:
+          name: infra-status-src

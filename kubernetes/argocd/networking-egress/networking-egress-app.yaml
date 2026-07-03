@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: networking-egress
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: networking-egress
+    app.kubernetes.io/part-of: networking
+  annotations:
+    argocd.argoproj.io/sync-wave: "40"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/orbli/homelab.git
+    targetRevision: master
+    path: kubernetes/manifests/networking-egress
+    kustomize: {}
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: networking
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=false
+    # Honour ignoreDifferences during sync too, so ArgoCD never writes the
+    # placeholder externalName over the operator's live value (no blip on the
+    # already-serving glm-spark1).
+    - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # The Tailscale operator rewrites spec.externalName (placeholder -> proxy
+  # FQDN) after each Service is created. Without this, ArgoCD would see the
+  # rewrite as drift and fight the operator on every sync.
+  ignoreDifferences:
+  - group: ""
+    kind: Service
+    jsonPointers:
+    - /spec/externalName

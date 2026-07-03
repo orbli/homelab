@@ -1,0 +1,12 @@
+# Egress to the Nomad server (home-hk2). Consumers reach the HTTP API at
+# nomad-hk2:4646 (e.g. the infra-status collector reads /v1/nodes, /v1/jobs).
+apiVersion: v1
+kind: Service
+metadata:
+  name: nomad-hk2
+  namespace: networking
+  annotations:
+    tailscale.com/tailnet-ip: "100.88.67.111"
+spec:
+  type: ExternalName
+  externalName: placeholder
