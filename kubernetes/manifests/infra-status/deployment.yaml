@@ -26,7 +26,9 @@ spec:
         # collector still runs if the install fails.
         command: ["sh", "-c", "apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq openssh-client >/dev/null 2>&1 || true; exec python3 /src/server.py"]
         env:
-        - {name: TTL, value: "30"}
+        # INTERVAL = per-source refresh + SSE push period (seconds). The knob.
+        # Keep it well under ~100s (Cloudflare drops idle proxied streams).
+        - {name: INTERVAL, value: "1"}
         - {name: PORT, value: "8080"}
         ports:
         - containerPort: 8080
@@ -35,8 +37,8 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 10
         resources:
-          requests: {cpu: 25m, memory: 48Mi}
-          limits: {cpu: 250m, memory: 160Mi}
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {cpu: 500m, memory: 256Mi}
         volumeMounts:
         - {name: src, mountPath: /src}
         - {name: qnap-key, mountPath: /keys/qnap, readOnly: true}
