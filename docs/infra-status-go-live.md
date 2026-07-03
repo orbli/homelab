@@ -85,3 +85,20 @@ ssh home-hk2-spark1 'bash ~/glm52-serve.sh'   # when you can spare the reload
 # collector: kubectl delete -f kubernetes/argocd/infra-status/   (+ networking-egress)
 # egress:    kubectl delete svc glm-spark2 nomad-hk2 -n networking
 ```
+
+## Out-of-band secret: qnap-ssh (for the QNAP tile)
+
+The QNAP tile SSHes to the NAS (no HTTP stats surface). The private key lives in
+the `qnap-ssh` secret (ns infra-status), created out-of-band (Ansible-owned, NOT
+in git). To (re)create:
+
+```bash
+ssh-keygen -t ed25519 -N '' -C infra-status-collector -f /tmp/qnap_key
+# authorize it on the NAS (persists in the user's ~/.ssh):
+ssh o@company-hk3-nas "cat >> ~/.ssh/authorized_keys" < /tmp/qnap_key.pub
+kubectl create secret generic qnap-ssh -n infra-status --from-file=id=/tmp/qnap_key
+shred -u /tmp/qnap_key
+```
+
+If the secret is absent the collector still runs — the QNAP tile just drops
+(best-effort).
