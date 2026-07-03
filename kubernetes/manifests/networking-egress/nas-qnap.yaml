@@ -1,0 +1,12 @@
+# Egress to the QNAP NAS (company-hk3-nas). The infra-status collector SSHes
+# here for the QNAP tile (the NAS has no HTTP stats surface).
+apiVersion: v1
+kind: Service
+metadata:
+  name: nas-qnap
+  namespace: networking
+  annotations:
+    tailscale.com/tailnet-ip: "100.119.56.40"
+spec:
+  type: ExternalName
+  externalName: placeholder

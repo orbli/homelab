@@ -3,7 +3,7 @@
 # Reached publicly via the cloudflared tunnel (outbound-only; home IP never exposed).
 # Privacy rule: NEVER emit IPs, internal hostnames, datacenter/geo strings.
 # Only counts, pretty labels, and aggregate metrics leave this process.
-import json, os, ssl, time, threading, urllib.request, urllib.parse
+import json, os, ssl, time, threading, subprocess, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TIMEOUT = 6
@@ -118,11 +118,17 @@ def k3s_node():
     pods = kube("/api/v1/pods")
     npods = len(pods.get("items", [])) if pods else None
     cpu = prom('100*(1-avg(rate(node_cpu_seconds_total{mode="idle"}[5m])))')
+    mem = prom('100*(1-sum(node_memory_MemAvailable_bytes)/sum(node_memory_MemTotal_bytes))')
+    cores = prom('count(node_cpu_seconds_total{mode="idle"})')
     mets = [["uptime", f"{max(ages)}d"] if ages else ["nodes", str(len(items))]]
     if cpu is not None:
         mets.append(["cpu", f"{round(cpu)}%"])
+    if mem is not None:
+        mets.append(["mem", f"{round(mem)}%"])
     if npods is not None:
         mets.append(["pods", str(npods)])
+    if cores is not None:
+        mets.append(["cores", str(round(cores))])
     return {"name": "k3s cluster", "role": f"{len(items)}× Pi · HA control-plane",
             "status": "ok" if ready == len(items) and items else "warn",
             "pill": f"{ready}/{len(items)} ready", "metrics": mets}
@@ -163,6 +169,44 @@ def nomad():
                         ["running", str(running)]]}
 
 
+def qnap():
+    # The QNAP has no HTTP stats surface and no python, so this is the one tile
+    # gathered over SSH (key mounted at /keys/qnap/id, reached via the nas-qnap
+    # egress). Best-effort: any failure just drops the tile. Emits only
+    # aggregate numbers — no hostname/model/IP.
+    key = "/keys/qnap/id"
+    if not os.path.exists(key):
+        return None
+    host = "o@nas-qnap.networking.svc.home-hk1-cluster.orbb.li"
+    remote = ('cat /proc/loadavg; grep -E "MemTotal|MemAvailable" /proc/meminfo; '
+              'grep -c ^processor /proc/cpuinfo; cut -d. -f1 /proc/uptime; '
+              'df -P /share/CACHEDEV2_DATA 2>/dev/null | tail -1')
+    try:
+        r = subprocess.run(
+            ["ssh", "-i", key, "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes",
+             "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=8", host, remote],
+            capture_output=True, text=True, timeout=15)
+        out = r.stdout.splitlines()
+        if len(out) < 6:
+            return None
+        load = out[0].split()[0]
+        mt = int(out[1].split()[1]); ma = int(out[2].split()[1])
+        mem = round((mt - ma) / mt * 100)
+        cores = out[3].strip()
+        up_d = int(out[4].strip()) // 86400
+        p = out[5].split()
+        used_tb = int(p[2]) / 1073741824
+        tot_tb = int(p[1]) / 1073741824
+        disk = f"{used_tb:.1f}/{round(tot_tb)} TB"
+    except Exception as e:
+        print("qnap: %s" % e, flush=True)
+        return None
+    return {"name": "QNAP NAS", "role": f"QTS · {cores}-core array",
+            "status": "ok", "pill": "online",
+            "metrics": [["uptime", f"{up_d}d"], ["load", load],
+                        ["mem", f"{mem}%"], ["disk", disk]]}
+
+
 def platform():
     out = []
     obs = kube("/api/v1/namespaces/observability/pods")
@@ -193,7 +237,7 @@ def build_snapshot():
     return {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "compute": compute(),
-        "nodes": [x for x in (k3s_node(), nomad()) if x],
+        "nodes": [x for x in (k3s_node(), nomad(), qnap()) if x],
         "platform": [x for x in ([argocd()] + platform()) if x],
         "cloud": cloud(),
     }

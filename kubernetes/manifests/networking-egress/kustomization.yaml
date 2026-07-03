@@ -7,6 +7,7 @@ resources:
 - glm-spark1.yaml
 - glm-spark2.yaml
 - nomad-hk2.yaml
+- nas-qnap.yaml
 
 labels:
 - pairs:

@@ -21,7 +21,10 @@ spec:
       containers:
       - name: server
         image: python:3.12-slim
-        command: ["python3", "/src/server.py"]
+        # openssh-client is needed only for the best-effort QNAP tile (no HTTP
+        # stats surface on the NAS). Installed at startup and ';'-chained so the
+        # collector still runs if the install fails.
+        command: ["sh", "-c", "apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq openssh-client >/dev/null 2>&1 || true; exec python3 /src/server.py"]
         env:
         - {name: TTL, value: "30"}
         - {name: PORT, value: "8080"}
@@ -29,14 +32,21 @@ spec:
         - containerPort: 8080
         readinessProbe:
           httpGet: {path: /healthz, port: 8080}
-          initialDelaySeconds: 3
+          initialDelaySeconds: 30
           periodSeconds: 10
         resources:
           requests: {cpu: 25m, memory: 48Mi}
-          limits: {cpu: 250m, memory: 128Mi}
+          limits: {cpu: 250m, memory: 160Mi}
         volumeMounts:
         - {name: src, mountPath: /src}
+        - {name: qnap-key, mountPath: /keys/qnap, readOnly: true}
       volumes:
       - name: src
         configMap:
           name: infra-status-src
+      # SSH key for the QNAP tile. Secret created out-of-band (Ansible-owned,
+      # like grafana-oauth-client) — NOT in git.
+      - name: qnap-key
+        secret:
+          secretName: qnap-ssh
+          defaultMode: 0400
