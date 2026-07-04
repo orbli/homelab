@@ -184,61 +184,73 @@ def _gpu(line):
         return None
 
 
+def _spark_host(lines, label):
+    # lines: [gpu_csv, "MemTotal: N kB", "MemAvailable: N kB", uptime_sec, cores]
+    if len(lines) < 5:
+        return None
+    g = _gpu(lines[0])
+    if not g:
+        return None
+    g["label"] = label
+    try:
+        mt = int(lines[1].split()[1]); ma = int(lines[2].split()[1])
+        g["mem"] = round((mt - ma) / 1024 / 1024)      # GB resident (unified mem)
+        g["memtot"] = round(mt / 1024 / 1024)
+        g["_up"] = int(lines[3].strip()) // 86400
+        g["_cores"] = int(lines[4].strip())
+    except Exception:
+        pass
+    return g
+
+
 def sparks_panel():
-    # Two GB10 boxes. spark2 is reachable over its egress (real sshd); spark1 runs
-    # Tailscale-SSH which blocks the egress proxy, so we hop to it from spark2 over
-    # the RoCE link. One SSH round-trip returns both GPUs + host memory.
+    # Two GB10 boxes, each with its own unified memory. spark2 is reachable over its
+    # egress (real sshd); spark1 runs Tailscale-SSH which blocks the egress proxy, so
+    # we hop to it from spark2 over the RoCE link. One round-trip returns BOTH hosts'
+    # GPU + memory + uptime.
     if not os.path.exists(SSH_KEY):
         return None
     host = "o@glm-spark2.networking.svc.home-hk1-cluster.orbb.li"
     Q = "nvidia-smi --query-gpu=temperature.gpu,utilization.gpu,clocks.sm,power.draw --format=csv,noheader,nounits"
+    INFO = "grep -E 'MemTotal|MemAvailable' /proc/meminfo; cut -d. -f1 /proc/uptime; grep -c ^processor /proc/cpuinfo"
     remote = (
-        f'echo S2; {Q}; '
-        'echo H; grep -c ^processor /proc/cpuinfo; '
-        "awk '/MemTotal:/{t=$2}/MemAvailable:/{a=$2}END{print t, a}' /proc/meminfo; "
-        'cut -d. -f1 /proc/uptime; '
-        f'echo S1; ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 192.168.100.10 "{Q}"'
+        "echo B; " + Q + "; " + INFO + "; "
+        "echo A; ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 192.168.100.10 "
+        + '"' + Q + "; " + INFO + '"'
     )
     try:
         out = ssh_run(host, remote, timeout=8).splitlines()
     except Exception as e:
         print("sparks: %s" % e, flush=True)
         return None
-    gpus, host_m = {}, {}
-    sect = None
+    sect, cur, buf = {}, None, []
     for ln in out:
         ln = ln.strip()
-        if ln in ("S1", "S2", "H"):
-            sect = ln; host_m.setdefault("_h", [])
-            continue
-        if sect == "S2":
-            g = _gpu(ln)
-            if g:
-                g["label"] = "β"; gpus["β"] = g
-        elif sect == "S1":
-            g = _gpu(ln)
-            if g:
-                g["label"] = "α"; gpus["α"] = g
-        elif sect == "H" and ln:
-            host_m["_h"].append(ln)
+        if ln in ("A", "B"):
+            if cur:
+                sect[cur] = buf
+            cur, buf = ln, []
+        elif ln:
+            buf.append(ln)
+    if cur:
+        sect[cur] = buf
+    gpus = [g for g in (_spark_host(sect.get("A", []), "α"),
+                        _spark_host(sect.get("B", []), "β")) if g]
     if not gpus:
         return None
+    pooled = sum(g.get("mem", 0) for g in gpus)
+    pooltot = sum(g.get("memtot", 0) for g in gpus)
+    cores = sum(g.get("_cores", 0) for g in gpus)
+    up = max((g.get("_up", 0) for g in gpus), default=0)
     mets = []
-    h = host_m.get("_h", [])
-    try:
-        cores = h[0].strip()
-        mt, ma = [int(x) for x in h[1].split()]
-        resident_gb = round((mt - ma) / 1024 / 1024)
-        total_gb = round(mt / 1024 / 1024)
-        up_d = int(h[2].strip()) // 86400
-        mets.append(["model resident", f"{resident_gb} / {total_gb} GB"])
-        mets.append(["cpu cores", cores])
-        mets.append(["uptime", f"{up_d}d"])
-    except Exception:
-        pass
-    ordered = [gpus[k] for k in ("α", "β") if k in gpus]
+    if pooltot:
+        mets.append(["pooled mem", f"{pooled} / {pooltot} GB"])
+    if cores:
+        mets.append(["cpu cores", str(cores)])
+    if up:
+        mets.append(["uptime", f"{up}d"])
     return {"name": "GB10 Sparks", "kind": "big", "role": "2× GB10 · GLM tensor-split",
-            "status": "ok", "pill": f"{len(ordered)}/2 GPU", "gpus": ordered, "metrics": mets}
+            "status": "ok", "pill": f"{len(gpus)}/2 GPU", "gpus": gpus, "metrics": mets}
 
 
 def nomad():
