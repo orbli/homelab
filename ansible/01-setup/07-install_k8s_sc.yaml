@@ -53,6 +53,17 @@
       retries: 6
       delay: 10
 
+    # A StorageClass's provisioner/parameters/mountOptions are immutable, so a
+    # backend change (e.g. pi1 -> QNAP NAS) cannot be applied in place: the
+    # existing object must be removed and recreated. Deleting a StorageClass
+    # does NOT touch already-bound PVs/PVCs, so this is non-destructive to data.
+    - name: Remove existing k8s-csi StorageClass before recreating (params are immutable)
+      kubernetes.core.k8s:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: k8s-csi
+        state: absent
+
     - name: Apply NFS storage class
       kubernetes.core.k8s:
         state: present

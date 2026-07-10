@@ -1,5 +1,15 @@
-# sc-nfs.yaml
-# # https://microk8s.io/docs/how-to-nfs
+# k8s-sc.yaml — cluster default StorageClass (nfs.csi.k8s.io)
+#
+# Backend: QNAP NAS `company-hk3-nas` (192.168.88.81), shared folder `k8s`
+# on the SSD pool, PVs provisioned under its `pv/` subdirectory.
+#
+# NFSv4 path gotcha: QTS presents an fsid=0 pseudo-root, so the export is
+# mounted at the pseudo-root-relative path "/k8s/pv" — NOT its real on-disk
+# path "/share/CACHEDEV1_DATA/k8s/pv" (which fails to mount under v4).
+# Verified by a v4.1 mount + chown test from a cluster node.
+#
+# History: previously backed by pi1 (192.168.88.41:/srv/k8s), which made the
+# single Pi's local NVMe a SPOF for all persistent volumes. Moved to the NAS.
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -7,10 +17,10 @@ metadata:
   name: k8s-csi
 provisioner: nfs.csi.k8s.io
 parameters:
-  server: 192.168.88.41
-  share: /srv/k8s
+  server: 192.168.88.81
+  share: /k8s/pv
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 mountOptions:
   - hard
-  - nfsvers=4.2
+  - nfsvers=4.1
