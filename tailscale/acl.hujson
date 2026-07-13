@@ -113,6 +113,18 @@
             "dst":    ["autogroup:self"],
             "users":  ["autogroup:nonroot", "root"],
         },
+        // mail@orbb.li connects freely to homelab infra: no `check`
+        // re-auth prompt. First-match-wins, so this scoped `accept`
+        // must sit ABOVE the broader admin `check` rule below. Scope is
+        // deliberately narrow — only mail@orbb.li, only tag:homelab.
+        // zura35 and the other infra tags stay on `check` via the next
+        // rule.
+        {
+            "action": "accept",
+            "src":    ["mail@orbb.li"],
+            "dst":    ["tag:homelab"],
+            "users":  ["autogroup:nonroot", "root"],
+        },
         // Admins can SSH into tagged infra hosts.
         {
             "action": "check",
