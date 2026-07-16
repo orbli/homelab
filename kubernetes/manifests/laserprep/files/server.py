@@ -152,10 +152,22 @@ async def prep(file: UploadFile = File(...),
                 stylized_png = r.read()
                 stylize_cache = r.headers.get("X-Stylize-Cache")
         except Exception as e:
+            detail, hint = str(e), \
+                "untick 'stylize first' to threshold the image as-is"
+            body = getattr(e, "fp", None) and e.read()
+            if body:
+                try:
+                    detail = json.loads(body)
+                    if detail.get("error") == "model not loaded yet":
+                        hint = ("the stylize model is (re)loading — takes "
+                                "~4-5 min after a restart; retry shortly. "
+                                "Previously cached photo+seed combos still "
+                                "work during the reload.")
+                except Exception:
+                    detail = body.decode(errors="replace")[:300]
             return JSONResponse(
-                {"error": f"stylize upstream failed: {e}",
-                 "upstream": STYLIZE_UPSTREAM,
-                 "hint": "untick 'stylize first' to threshold the image as-is"},
+                {"error": "stylize upstream failed", "detail": detail,
+                 "upstream": STYLIZE_UPSTREAM, "hint": hint},
                 status_code=503)
         data = stylized_png  # prep the drawing, not the photo
 
