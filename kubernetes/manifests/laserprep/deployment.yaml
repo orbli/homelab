@@ -1,0 +1,59 @@
+# laserprep: MCGT photo→laser line-art pipeline, internal-only web service.
+# Deterministic tail (threshold/1-bit/SVG/contact-sheet) runs on-cluster;
+# GPU stylization is proxied to the DGX Spark via the networking-egress
+# ExternalName service (glm-spark1.networking). No public exposure.
+# Same no-image pattern as infra-status: python:3.12-slim + deps at startup,
+# source mounted from hash-suffixed ConfigMaps so edits roll the pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laserprep
+  namespace: laserprep
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: laserprep
+  template:
+    metadata:
+      labels:
+        app: laserprep
+    spec:
+      containers:
+      - name: server
+        image: python:3.12-slim
+        # libglib2.0-0 is opencv-headless's only system dep on slim images.
+        command: ["sh", "-c"]
+        args:
+        - |
+          apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq libglib2.0-0 >/dev/null 2>&1 || true
+          pip install --no-cache-dir -q numpy opencv-python-headless pillow potracer fastapi uvicorn python-multipart
+          exec python3 -m uvicorn server:app --host 0.0.0.0 --port 8080 --app-dir /app --workers 2
+        env:
+        # Phase 3 stylization endpoint on the Spark (not serving yet; the app
+        # degrades to 503 on /stylize until it exists).
+        - {name: STYLIZE_UPSTREAM, value: "http://glm-spark1.networking:8001"}
+        - {name: PYTHONPATH, value: "/app"}
+        - {name: LASERPREP_CONFIG, value: "/app/configs/materials.toml"}
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8080}
+          # pip install of the numpy/opencv stack on a Pi5 takes a while
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 30
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {cpu: "2", memory: 1Gi}
+        volumeMounts:
+        - {name: web-src, mountPath: /app}
+        - {name: pkg-src, mountPath: /app/laserprep}
+        - {name: config, mountPath: /app/configs}
+      volumes:
+      - name: web-src
+        configMap: {name: laserprep-web-src}
+      - name: pkg-src
+        configMap: {name: laserprep-pkg-src}
+      - name: config
+        configMap: {name: laserprep-config}

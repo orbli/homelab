@@ -1,0 +1,67 @@
+# Material profiles for laserprep.
+#
+# All size-like parameters are in PHYSICAL units (mm / mm^2), never pixels.
+# They are converted to pixels at runtime from the requested DPI, so the same
+# profile produces the same physical result at any resolution.
+#
+# Fields:
+#   default_strategy   "otsu" | "adaptive" | "manual"
+#   manual_threshold   0-255 cut point used by the "manual" strategy
+#   adaptive_block_mm  neighbourhood size for adaptive threshold (mm)
+#   adaptive_c         constant subtracted from the local mean (adaptive only)
+#   min_feature_mm     features (lines/gaps) narrower than this will not survive
+#                      the burn; used for despeckle sizing and warnings
+#   speck_area_mm2     isolated islands smaller than this are removed (both
+#                      black specks on white and white pinholes in black)
+#   invert             true if the machine expects white-on-black (e.g. slate,
+#                      anodised aluminium: laser REMOVES the dark coating)
+#   potrace_turdsize_mm2  suppress traced paths smaller than this area
+#   contact_thresholds    manual cut points rendered on the contact sheet
+
+[birch-3mm]
+description = "3 mm birch plywood, raster engrave"
+default_strategy = "otsu"
+manual_threshold = 128
+adaptive_block_mm = 4.0
+adaptive_c = 8
+min_feature_mm = 0.15
+speck_area_mm2 = 0.02
+invert = false
+potrace_turdsize_mm2 = 0.02
+contact_thresholds = [96, 112, 128, 144, 160, 176]
+
+[slate]
+description = "natural slate coaster — burn turns surface LIGHT, so artwork is inverted"
+default_strategy = "otsu"
+manual_threshold = 120
+adaptive_block_mm = 4.0
+adaptive_c = 6
+min_feature_mm = 0.20
+speck_area_mm2 = 0.03
+invert = true
+potrace_turdsize_mm2 = 0.03
+contact_thresholds = [88, 104, 120, 136, 152, 168]
+
+[acrylic-cast]
+description = "cast acrylic, frosted-white engrave — inverted like slate"
+default_strategy = "otsu"
+manual_threshold = 128
+adaptive_block_mm = 4.0
+adaptive_c = 8
+min_feature_mm = 0.12
+speck_area_mm2 = 0.015
+invert = true
+potrace_turdsize_mm2 = 0.015
+contact_thresholds = [96, 112, 128, 144, 160, 176]
+
+[alu-anodised]
+description = "anodised aluminium — laser strips coating to bright metal, inverted"
+default_strategy = "manual"
+manual_threshold = 140
+adaptive_block_mm = 3.0
+adaptive_c = 6
+min_feature_mm = 0.08
+speck_area_mm2 = 0.01
+invert = true
+potrace_turdsize_mm2 = 0.01
+contact_thresholds = [108, 124, 140, 156, 172, 188]

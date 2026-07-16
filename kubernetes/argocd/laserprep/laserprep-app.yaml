@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: laserprep
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: laserprep
+  annotations:
+    argocd.argoproj.io/sync-wave: "60"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/orbli/homelab.git
+    targetRevision: master
+    path: kubernetes/manifests/laserprep
+    kustomize: {}
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: laserprep
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=false
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: laserprep
+
+resources:
+- namespace.yaml
+- service.yaml
+- deployment.yaml
+
+# Source of truth for the package is ~/workbench/manual_xtool (copied here on
+# change). Hash-suffixed ConfigMaps roll the Deployment on every edit.
+configMapGenerator:
+- name: laserprep-web-src
+  files:
+  - files/server.py
+- name: laserprep-pkg-src
+  files:
+  - files/laserprep/__init__.py
+  - files/laserprep/materials.py
+  - files/laserprep/prep.py
+  - files/laserprep/vectorize.py
+  - files/laserprep/contact.py
+- name: laserprep-config
+  files:
+  - files/materials.toml
+
+labels:
+- pairs:
+    app.kubernetes.io/managed-by: argocd
+  includeSelectors: false

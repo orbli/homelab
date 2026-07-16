@@ -1,0 +1,13 @@
+# Internal-only (ClusterIP). Reach from outside the cluster with:
+#   kubectl -n laserprep port-forward svc/laserprep 8080:80
+apiVersion: v1
+kind: Service
+metadata:
+  name: laserprep
+  namespace: laserprep
+spec:
+  selector:
+    app: laserprep
+  ports:
+  - port: 80
+    targetPort: 8080
