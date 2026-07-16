@@ -75,14 +75,30 @@ def healthz():
     return {"ok": True, "version": __version__}
 
 
+def _upstream_ok() -> bool:
+    try:
+        with urllib.request.urlopen(STYLIZE_UPSTREAM + "/healthz", timeout=3) as r:
+            return json.loads(r.read()).get("model_loaded", False)
+    except Exception:
+        return False
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     opts = "".join(
         f'<option value="{m.name}">{m.name} — {m.description}</option>'
         for m in MATERIALS.values())
+    up = _upstream_ok()
+    up_note = ("🟢 stylize model loaded" if up else
+               "🔴 stylize upstream not ready — raw photos can't be converted yet")
     body = f"""
+<p>Pipeline: <b>photo → stylize (GPU line-art) → prep (threshold → burn files)</b>.<br>
+Upload a photo with “stylize first” ticked, or upload existing line art directly.</p>
 <form method="post" action="/prep" enctype="multipart/form-data">
- <label>Line-art image <input type="file" name="file" required></label>
+ <label>Image <input type="file" name="file" required></label>
+ <label><input type="checkbox" name="stylize_first" {"checked" if up else ""}>
+   stylize photo first ({up_note})</label>
+ <label><input type="checkbox" name="fast_stylize"> fast stylize (Lightning 4-step preview)</label>
  <label>Material <select name="material">{opts}</select></label>
  <label>Width (mm) <input type="number" name="width_mm" value="150" step="0.1" min="5" max="600"></label>
  <label>DPI <input type="number" name="dpi" value="318" step="1" min="72" max="1200"></label>
@@ -96,7 +112,7 @@ def index():
  <button style="margin-top:1rem">Process</button>
 </form>
 <p>Stylization upstream: <code>{STYLIZE_UPSTREAM}</code>
- (<a href="/stylize/status">status</a>) — Phase 3, not yet serving.</p>"""
+ (<a href="/stylize/status">status</a>)</p>"""
     return _PAGE.format(version=__version__, body=body)
 
 
@@ -107,7 +123,9 @@ async def prep(file: UploadFile = File(...),
                dpi: float = Form(318.0),
                strategy: str = Form(""),
                manual_threshold: str = Form(""),
-               want_svg: str = Form("")):
+               want_svg: str = Form(""),
+               stylize_first: str = Form(""),
+               fast_stylize: str = Form("")):
     data = await file.read()
     if len(data) > 30 * 2**20:
         return JSONResponse({"error": "upload > 30MB"}, status_code=413)
@@ -116,6 +134,24 @@ async def prep(file: UploadFile = File(...),
         return JSONResponse({"error": f"unknown material {material}"}, 422)
     cut = int(manual_threshold) if manual_threshold.strip() else None
     strat = strategy or ("manual" if cut is not None else mat.default_strategy)
+
+    stylized_png = None
+    if stylize_first:
+        url = (STYLIZE_UPSTREAM + "/stylize"
+               + ("?fast=1" if fast_stylize else ""))
+        req = urllib.request.Request(
+            url, data=data, method="POST",
+            headers={"Content-Type": "application/octet-stream"})
+        try:
+            with urllib.request.urlopen(req, timeout=900) as r:
+                stylized_png = r.read()
+        except Exception as e:
+            return JSONResponse(
+                {"error": f"stylize upstream failed: {e}",
+                 "upstream": STYLIZE_UPSTREAM,
+                 "hint": "untick 'stylize first' to threshold the image as-is"},
+                status_code=503)
+        data = stylized_png  # prep the drawing, not the photo
 
     gray = resize_physical(_decode_upload(data), width_mm, dpi)
     binary = despeckle(threshold(gray, strat, mat, dpi, cut), mat, dpi)
@@ -136,6 +172,8 @@ async def prep(file: UploadFile = File(...),
         "physical": {"width_mm": width_mm, "height_mm": round(height_mm, 3),
                      "dpi": dpi, "px": [binary.shape[1], binary.shape[0]]},
         "material": mat.__dict__, "strategy": strat, "manual_threshold": cut,
+        "stylized_first": bool(stylized_png),
+        "stylize_fast": bool(fast_stylize) if stylized_png else None,
         "feature_report": report,
     }
 
@@ -144,6 +182,8 @@ async def prep(file: UploadFile = File(...),
     with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"{stem}_1bit.png", buf_1bit.getvalue())
         z.writestr(f"{stem}_contact.png", buf_sheet.getvalue())
+        if stylized_png:
+            z.writestr(f"{stem}_stylized.png", stylized_png)
         if svg:
             z.writestr(f"{stem}.svg", svg)
         z.writestr(f"{stem}_run.json", json.dumps(manifest, indent=2))
@@ -151,16 +191,28 @@ async def prep(file: UploadFile = File(...),
     b64 = lambda b: base64.b64encode(b).decode()
     warn = ""
     if report["sub_min_feature_pct"] > 5:
-        warn = (f'<p class="warn">{report["sub_min_feature_pct"]}% of ink is '
-                f'thinner than {mat.min_feature_mm}mm — may not survive the '
-                f'burn on {mat.name}.</p>')
+        warn += (f'<p class="warn">{report["sub_min_feature_pct"]}% of ink is '
+                 f'thinner than {mat.min_feature_mm}mm — may not survive the '
+                 f'burn on {mat.name}.</p>')
+    # Line art is bimodal (strokes + paper); photos live in the midtones.
+    # Measured: synthetic line art 11% midtones, reference pet photo 81%.
+    midtone_pct = 100 * ((gray > 64) & (gray < 192)).mean()
+    if not stylized_png and midtone_pct > 40:
+        warn += (f'<p class="warn">{midtone_pct:.0f}% of pixels are midtones — '
+                 f'this looks like a raw photo, not line art. Thresholding a '
+                 f'photo gives solid blobs; tick <b>stylize photo first</b> on '
+                 f'the form to convert it to a pen-and-ink drawing first.</p>')
+    stylized_html = ""
+    if stylized_png:
+        stylized_html = (f'<h3>Stylized line art (input to prep)</h3>'
+                         f'<img src="data:image/png;base64,{b64(stylized_png)}">')
     body = f"""
 <p><a href="/">&larr; another</a></p>
 <p><b>{binary.shape[1]}×{binary.shape[0]}px = {width_mm:g}×{height_mm:.1f}mm
  @ {dpi:g}dpi</b> · {mat.name} · strategy {strat}</p>{warn}
 <p><a download="{stem}_laserprep.zip"
       href="data:application/zip;base64,{b64(zbuf.getvalue())}">
-   ⬇ download all ({len(zbuf.getvalue())//1024} KiB zip)</a></p>
+   ⬇ download all ({len(zbuf.getvalue())//1024} KiB zip)</a></p>{stylized_html}
 <h3>1-bit raster</h3><img src="data:image/png;base64,{b64(buf_1bit.getvalue())}">
 <h3>Contact sheet — burn one tile, pick by eye</h3>
 <img src="data:image/png;base64,{b64(buf_sheet.getvalue())}">"""
