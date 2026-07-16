@@ -30,6 +30,23 @@ invert = false
 potrace_turdsize_mm2 = 0.02
 contact_thresholds = [96, 112, 128, 144, 160, 176]
 
+[cork-glued]
+# xTool P3 Studio defaults for Glued Cork: 8% power, 600 mm/s, 1 pass,
+# 120 lines/cm (= ~305 DPI — use dpi 305, not the 318 default), bi-directional.
+# Cork chars darker (normal polarity) but is coarse and porous: fine hatching
+# and stipple fill in, so keep only the darkest strokes (low manual cut) and
+# a fat minimum feature. Burn the contact sheet to tune — cork batches vary.
+description = "glued cork sheet — sparse ink only, ~305 dpi (120 lines/cm)"
+default_strategy = "manual"
+manual_threshold = 96
+adaptive_block_mm = 5.0
+adaptive_c = 10
+min_feature_mm = 0.30
+speck_area_mm2 = 0.05
+invert = false
+potrace_turdsize_mm2 = 0.05
+contact_thresholds = [64, 80, 96, 112, 128, 144]
+
 [slate]
 description = "natural slate coaster — burn turns surface LIGHT, so artwork is inverted"
 default_strategy = "otsu"
