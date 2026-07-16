@@ -24,7 +24,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from PIL import Image
 
@@ -99,6 +99,9 @@ Upload a photo with “stylize first” ticked, or upload existing line art dire
  <label><input type="checkbox" name="stylize_first" {"checked" if up else ""}>
    stylize photo first ({up_note})</label>
  <label><input type="checkbox" name="fast_stylize"> fast stylize (Lightning 4-step preview)</label>
+ <label>Stylize seed <input type="number" name="seed" value="42" min="0" max="4294967295">
+   <small>same photo + same seed = identical drawing (cached, instant on reorder);
+   change it to get a different hatching interpretation</small></label>
  <label>Material <select name="material">{opts}</select></label>
  <label>Width (mm) <input type="number" name="width_mm" value="150" step="0.1" min="5" max="600"></label>
  <label>DPI <input type="number" name="dpi" value="318" step="1" min="72" max="1200"></label>
@@ -125,7 +128,8 @@ async def prep(file: UploadFile = File(...),
                manual_threshold: str = Form(""),
                want_svg: str = Form(""),
                stylize_first: str = Form(""),
-               fast_stylize: str = Form("")):
+               fast_stylize: str = Form(""),
+               seed: int = Form(42)):
     data = await file.read()
     if len(data) > 30 * 2**20:
         return JSONResponse({"error": "upload > 30MB"}, status_code=413)
@@ -136,15 +140,17 @@ async def prep(file: UploadFile = File(...),
     strat = strategy or ("manual" if cut is not None else mat.default_strategy)
 
     stylized_png = None
+    stylize_cache = None
     if stylize_first:
-        url = (STYLIZE_UPSTREAM + "/stylize"
-               + ("?fast=1" if fast_stylize else ""))
+        url = (f"{STYLIZE_UPSTREAM}/stylize?seed={seed}"
+               + ("&fast=1" if fast_stylize else ""))
         req = urllib.request.Request(
             url, data=data, method="POST",
             headers={"Content-Type": "application/octet-stream"})
         try:
             with urllib.request.urlopen(req, timeout=900) as r:
                 stylized_png = r.read()
+                stylize_cache = r.headers.get("X-Stylize-Cache")
         except Exception as e:
             return JSONResponse(
                 {"error": f"stylize upstream failed: {e}",
@@ -173,6 +179,8 @@ async def prep(file: UploadFile = File(...),
                      "dpi": dpi, "px": [binary.shape[1], binary.shape[0]]},
         "material": mat.__dict__, "strategy": strat, "manual_threshold": cut,
         "stylized_first": bool(stylized_png),
+        "stylize_seed": seed if stylized_png else None,
+        "stylize_cache": stylize_cache,
         "stylize_fast": bool(fast_stylize) if stylized_png else None,
         "feature_report": report,
     }
@@ -204,7 +212,9 @@ async def prep(file: UploadFile = File(...),
                  f'the form to convert it to a pen-and-ink drawing first.</p>')
     stylized_html = ""
     if stylized_png:
-        stylized_html = (f'<h3>Stylized line art (input to prep)</h3>'
+        cache_note = " · served from cache" if stylize_cache == "hit" else ""
+        stylized_html = (f'<h3>Stylized line art (input to prep) '
+                         f'<small>seed {seed}{cache_note}</small></h3>'
                          f'<img src="data:image/png;base64,{b64(stylized_png)}">')
     body = f"""
 <p><a href="/">&larr; another</a></p>
@@ -231,11 +241,14 @@ def stylize_status():
 
 
 @app.post("/stylize")
-async def stylize(file: UploadFile = File(...)):
-    """Forward a photo to the Spark stylization service (Phase 3)."""
+async def stylize(request: Request, file: UploadFile = File(...)):
+    """Forward a photo to the Spark stylization service (Phase 3).
+    Query params (seed, fast, steps, cfg, prompt) pass through unchanged."""
     data = await file.read()
+    qs = str(request.query_params)
     req = urllib.request.Request(
-        STYLIZE_UPSTREAM + "/stylize", data=data, method="POST",
+        STYLIZE_UPSTREAM + "/stylize" + (f"?{qs}" if qs else ""),
+        data=data, method="POST",
         headers={"Content-Type": file.content_type or "application/octet-stream"})
     try:
         with urllib.request.urlopen(req, timeout=600) as r:
