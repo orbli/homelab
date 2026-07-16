@@ -1,0 +1,14 @@
+# Egress to spark1 for the Qwen-Image-Edit-2511 stylization service
+# (container `imgedit`, port 8001) consumed by laserprep. Same tailnet device
+# as glm-spark1 — a separate Service keeps the role explicit and lets GLM's
+# egress name survive if that serving ever comes back.
+apiVersion: v1
+kind: Service
+metadata:
+  name: imgedit-spark1
+  namespace: networking
+  annotations:
+    tailscale.com/tailnet-ip: "100.99.244.49"
+spec:
+  type: ExternalName
+  externalName: placeholder
