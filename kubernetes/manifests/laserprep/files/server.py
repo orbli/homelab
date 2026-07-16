@@ -172,7 +172,8 @@ async def prep(file: UploadFile = File(...),
         data = stylized_png  # prep the drawing, not the photo
 
     gray = resize_physical(_decode_upload(data), width_mm, dpi)
-    binary = despeckle(threshold(gray, strat, mat, dpi, cut), mat, dpi)
+    binary, eff_cut = threshold(gray, strat, mat, dpi, cut)
+    binary = despeckle(binary, mat, dpi)
     report = feature_width_report(binary, mat, dpi)
     height_mm = width_mm * binary.shape[0] / binary.shape[1]
 
@@ -190,6 +191,7 @@ async def prep(file: UploadFile = File(...),
         "physical": {"width_mm": width_mm, "height_mm": round(height_mm, 3),
                      "dpi": dpi, "px": [binary.shape[1], binary.shape[0]]},
         "material": mat.__dict__, "strategy": strat, "manual_threshold": cut,
+        "effective_threshold": eff_cut,
         "stylized_first": bool(stylized_png),
         "stylize_seed": seed if stylized_png else None,
         "stylize_cache": stylize_cache,
@@ -231,7 +233,8 @@ async def prep(file: UploadFile = File(...),
     body = f"""
 <p><a href="/">&larr; another</a></p>
 <p><b>{binary.shape[1]}×{binary.shape[0]}px = {width_mm:g}×{height_mm:.1f}mm
- @ {dpi:g}dpi</b> · {mat.name} · strategy {strat}</p>{warn}
+ @ {dpi:g}dpi</b> · {mat.name} · strategy {strat}{
+    f" (cut {int(eff_cut)})" if eff_cut is not None else ""}</p>{warn}
 <p><a download="{stem}_laserprep.zip"
       href="data:application/zip;base64,{b64(zbuf.getvalue())}">
    ⬇ download all ({len(zbuf.getvalue())//1024} KiB zip)</a></p>{stylized_html}

@@ -20,12 +20,14 @@ _THUMB_W = 480
 
 def build_contact_sheet(gray: np.ndarray, material: Material,
                         dpi: float) -> Image.Image:
+    otsu_bin, otsu_cut = threshold(gray, "otsu", material, dpi)
     variants: list[tuple[str, np.ndarray]] = [
-        ("otsu", threshold(gray, "otsu", material, dpi)),
-        ("adaptive", threshold(gray, "adaptive", material, dpi)),
+        (f"otsu ({int(otsu_cut)})", otsu_bin),
+        ("adaptive", threshold(gray, "adaptive", material, dpi)[0]),
     ]
     for cut in material.contact_thresholds:
-        variants.append((f"manual {cut}", threshold(gray, "manual", material, dpi, cut)))
+        variants.append(
+            (f"manual {cut}", threshold(gray, "manual", material, dpi, cut)[0]))
 
     variants = [(name, despeckle(v, material, dpi)) for name, v in variants]
 

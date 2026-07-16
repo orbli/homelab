@@ -35,22 +35,26 @@ def resize_physical(gray: np.ndarray, width_mm: float, dpi: float) -> np.ndarray
 
 
 def threshold(gray: np.ndarray, strategy: str, material: Material, dpi: float,
-              manual_value: int | None = None) -> np.ndarray:
-    """Binarise. Returns uint8 array of {0, 255}; 0 = ink (burn), 255 = paper."""
+              manual_value: int | None = None) -> tuple[np.ndarray, float | None]:
+    """Binarise. Returns (binary, cut): binary is uint8 {0, 255} with 0 = ink
+    (burn); cut is the effective global gray cut actually applied — Otsu's
+    computed value, the manual value, or None for adaptive (no global cut)."""
     if strategy == "otsu":
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    elif strategy == "adaptive":
+        cut, binary = cv2.threshold(gray, 0, 255,
+                                    cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return binary, cut
+    if strategy == "adaptive":
         block = round(mm_to_px(material.adaptive_block_mm, dpi))
         block = max(3, block | 1)  # adaptiveThreshold needs an odd size >= 3
         binary = cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
             block, material.adaptive_c)
-    elif strategy == "manual":
+        return binary, None
+    if strategy == "manual":
         cut = material.manual_threshold if manual_value is None else manual_value
         _, binary = cv2.threshold(gray, cut, 255, cv2.THRESH_BINARY)
-    else:
-        raise ValueError(f"unknown threshold strategy: {strategy}")
-    return binary
+        return binary, float(cut)
+    raise ValueError(f"unknown threshold strategy: {strategy}")
 
 
 def despeckle(binary: np.ndarray, material: Material, dpi: float) -> np.ndarray:
