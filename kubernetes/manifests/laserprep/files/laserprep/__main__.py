@@ -42,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG,
                     help="materials.toml path")
     ap.add_argument("--no-svg", action="store_true", help="skip potrace vector")
+    ap.add_argument("--dither-preview", action="store_true",
+                    help="add dithering tiles (1:1 crops) to the contact sheet")
     args = ap.parse_args(argv)
 
     materials = load_materials(args.config)
@@ -59,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
 
     gray = load_grayscale(str(in_path))
     gray = resize_physical(gray, args.width_mm, args.dpi)
-    binary = threshold(gray, strategy, mat, args.dpi, args.manual_threshold)
+    binary, cut = threshold(gray, strategy, mat, args.dpi, args.manual_threshold)
     binary = despeckle(binary, mat, args.dpi)
     report = feature_width_report(binary, mat, args.dpi)
 
@@ -74,7 +76,8 @@ def main(argv: list[str] | None = None) -> int:
         p_svg.write_text(trace_svg(binary, args.width_mm, args.dpi, mat))
 
     p_contact = out_dir / f"{stem}_contact.png"
-    build_contact_sheet(gray, mat, args.dpi).save(p_contact)
+    build_contact_sheet(gray, mat, args.dpi,
+                        include_dither=args.dither_preview).save(p_contact)
 
     manifest = {
         "tool": "laserprep",
@@ -88,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         "material": mat.__dict__,
         "strategy": strategy,
         "manual_threshold": args.manual_threshold,
+        "effective_threshold": cut,
         "feature_report": report,
         "outputs": {"raster_1bit": str(p_1bit),
                     "svg": str(p_svg) if p_svg else None,

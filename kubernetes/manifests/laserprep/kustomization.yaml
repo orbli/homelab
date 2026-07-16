@@ -21,6 +21,7 @@ configMapGenerator:
   - files/laserprep/prep.py
   - files/laserprep/vectorize.py
   - files/laserprep/contact.py
+  - files/laserprep/dither.py
 - name: laserprep-config
   files:
   - files/materials.toml

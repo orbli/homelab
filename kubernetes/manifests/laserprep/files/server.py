@@ -112,6 +112,8 @@ Upload a photo with “stylize first” ticked, or upload existing line art dire
  <label>Manual threshold (0–255, only for manual)
    <input type="number" name="manual_threshold" min="0" max="255" placeholder="material default"></label>
  <label><input type="checkbox" name="want_svg" checked> trace SVG (potrace)</label>
+ <label><input type="checkbox" name="want_dither"> add dithering previews to
+   contact sheet (Floyd/Jarvis/Stucki/Atkinson/Sierra/Bayer, 1:1 crops — slower)</label>
  <button style="margin-top:1rem">Process</button>
 </form>
 <p>Stylization upstream: <code>{STYLIZE_UPSTREAM}</code>
@@ -127,6 +129,7 @@ async def prep(file: UploadFile = File(...),
                strategy: str = Form(""),
                manual_threshold: str = Form(""),
                want_svg: str = Form(""),
+               want_dither: str = Form(""),
                stylize_first: str = Form(""),
                fast_stylize: str = Form(""),
                seed: int = Form(42)):
@@ -180,7 +183,8 @@ async def prep(file: UploadFile = File(...),
     buf_1bit = io.BytesIO()
     to_1bit(binary, mat.invert).save(buf_1bit, format="PNG", dpi=(dpi, dpi))
     buf_sheet = io.BytesIO()
-    build_contact_sheet(gray, mat, dpi).save(buf_sheet, format="PNG")
+    build_contact_sheet(gray, mat, dpi, include_dither=bool(want_dither)
+                        ).save(buf_sheet, format="PNG")
     svg = trace_svg(binary, width_mm, dpi, mat) if want_svg else None
 
     manifest = {
