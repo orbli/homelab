@@ -1,5 +1,6 @@
-# Internal-only (ClusterIP). Reach from outside the cluster with:
-#   kubectl -n laserprep port-forward svc/laserprep 8080:80
+# Internal-only (ClusterIP). The cluster network is routed over the tailnet
+# with split-DNS, so from any tailnet machine this is directly:
+#   http://laserprep.laserprep.svc.home-hk1-cluster.orbb.li/
 apiVersion: v1
 kind: Service
 metadata:
