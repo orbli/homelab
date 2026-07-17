@@ -192,7 +192,8 @@ if (typeof document !== "undefined") (function () {
   const cfg = window.LP;  // injected by server: art, physical, material, render info
   const $ = id => document.getElementById(id);
   const img = new Image();
-  let gray = null, W = 0, H = 0, curBin = null, blobUrl = null, artUrl = null;
+  let gray = null, W = 0, H = 0, curBin = null, blobUrl = null, artUrl = null,
+      snapUrl = null;
 
   function fmt(x) { return Math.round(x * 10) / 10; }
 
@@ -229,6 +230,15 @@ if (typeof document !== "undefined") (function () {
     return applyDither(gray, W, H, mode);
   }
 
+  function describe() {
+    const mode = $("mode").value;
+    const cut = mode === "manual" ? $("cut").value
+      : (mode === "otsu" ? $("mode").dataset.otsu : null);
+    return `${mode}${cut !== null ? " (cut " + cut + ")" : ""}` +
+      ` · ink ${inkPct(curBin).toFixed(1)}%` +
+      (cfg.material.invert ? " · inverted" : "");
+  }
+
   function render() {
     const mode = $("mode").value;
     $("cut").disabled = mode !== "manual";
@@ -249,6 +259,7 @@ if (typeof document !== "undefined") (function () {
     ctx.putImageData(id, 0, 0);
     $("ink").textContent = `ink ${inkPct(curBin).toFixed(1)}% · ` +
       `${Math.round(performance.now() - t0)}ms` + (inv ? " · inverted output" : "");
+    $("livecap").textContent = "live: " + describe();
     cv.toBlob(b => {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       blobUrl = URL.createObjectURL(b);
@@ -258,6 +269,25 @@ if (typeof document !== "undefined") (function () {
 
   $("mode").addEventListener("change", render);
   $("cut").addEventListener("input", render);
+
+  $("snapbtn").addEventListener("click", () => {
+    const sc = $("snap");
+    sc.width = W; sc.height = H;
+    sc.getContext("2d").drawImage($("preview"), 0, 0);
+    $("snapcap").textContent = "📌 " + describe();
+    $("snappane").style.display = "";
+    sc.toBlob(b => {
+      if (snapUrl) URL.revokeObjectURL(snapUrl);
+      snapUrl = URL.createObjectURL(b);
+      $("opensnap").href = snapUrl;
+    }, "image/png");
+  });
+
+  $("snapclear").addEventListener("click", e => {
+    e.preventDefault();
+    $("snappane").style.display = "none";
+    if (snapUrl) { URL.revokeObjectURL(snapUrl); snapUrl = null; }
+  });
 
   $("save").addEventListener("click", () => {
     $("preview").toBlob(async b => {
