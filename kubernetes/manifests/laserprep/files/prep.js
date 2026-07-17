@@ -298,7 +298,9 @@ if (typeof document !== "undefined") (function () {
       const meta = pngWithMeta(raw, cfg.dpi, {
         tool: "laserprep-web", mode, cut, width_mm: cfg.width_mm, dpi: cfg.dpi,
         material: cfg.material.name, invert: cfg.material.invert,
-        seed: cfg.seed, steps: cfg.steps, input_sha256: cfg.input_sha256,
+        seed: cfg.seed, steps: cfg.steps, true_cfg: cfg.true_cfg,
+        prompt: cfg.prompt || undefined, neg: cfg.neg || undefined,
+        input_sha256: cfg.input_sha256,
         ink_pct: fmt(inkPct(curBin)),
       });
       const a = document.createElement("a");

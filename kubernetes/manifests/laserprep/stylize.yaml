@@ -1,0 +1,71 @@
+# stylize: CPU-only ComfyUI client that owns the production recipe (the
+# workflow template in stylize_server.py), the render cache (PVC on the
+# QNAP-backed default StorageClass) and render manifests. GPU execution
+# happens on spark1's headless ComfyUI via networking-egress.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stylize-cache
+  namespace: laserprep
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stylize
+  namespace: laserprep
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stylize
+  template:
+    metadata:
+      labels:
+        app: stylize
+    spec:
+      containers:
+      - name: server
+        image: python:3.12-slim
+        command: ["sh", "-c"]
+        args:
+        - |
+          pip install --no-cache-dir -q fastapi uvicorn requests
+          exec python3 -m uvicorn stylize_server:app --host 0.0.0.0 --port 8001 --app-dir /app
+        env:
+        - {name: COMFY_UPSTREAM, value: "http://comfyui-spark1.networking:8188"}
+        - {name: CACHE_DIR, value: "/cache"}
+        ports:
+        - containerPort: 8001
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8001}
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 30
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits: {cpu: "1", memory: 512Mi}
+        volumeMounts:
+        - {name: src, mountPath: /app}
+        - {name: cache, mountPath: /cache}
+      volumes:
+      - name: src
+        configMap: {name: laserprep-stylize-src}
+      - name: cache
+        persistentVolumeClaim: {claimName: stylize-cache}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stylize
+  namespace: laserprep
+spec:
+  selector:
+    app: stylize
+  ports:
+  - port: 8001
+    targetPort: 8001

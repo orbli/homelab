@@ -1,7 +1,7 @@
 # laserprep: MCGT photo→laser line-art pipeline, internal-only web service.
-# Deterministic tail (threshold/1-bit/SVG/contact-sheet) runs on-cluster;
-# GPU stylization is proxied to the DGX Spark via the networking-egress
-# ExternalName service (glm-spark1.networking). No public exposure.
+# Thin portal + browser-side post-processing; stylization is delegated to
+# the in-cluster `stylize` service (which drives spark1's headless ComfyUI
+# via networking-egress). No public exposure.
 # Same no-image pattern as infra-status: python:3.12-slim + deps at startup,
 # source mounted from hash-suffixed ConfigMaps so edits roll the pod.
 apiVersion: apps/v1
@@ -30,9 +30,9 @@ spec:
           pip install --no-cache-dir -q fastapi uvicorn python-multipart
           exec python3 -m uvicorn server:app --host 0.0.0.0 --port 8080 --app-dir /app --workers 2
         env:
-        # Phase 3 stylization endpoint on the Spark (imgedit container; the
-        # app degrades to 503 on /stylize while the model is loading/absent).
-        - {name: STYLIZE_UPSTREAM, value: "http://imgedit-spark1.networking:8001"}
+        # In-cluster stylize service (ComfyUI client + render cache); the
+        # app degrades to 503 on /stylize while the backend is unreachable.
+        - {name: STYLIZE_UPSTREAM, value: "http://stylize:8001"}
         - {name: PYTHONPATH, value: "/app"}
         - {name: LASERPREP_CONFIG, value: "/app/configs/materials.toml"}
         ports:

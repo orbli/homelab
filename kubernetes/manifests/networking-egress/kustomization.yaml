@@ -6,7 +6,7 @@ namespace: networking
 resources:
 - glm-spark1.yaml
 - glm-spark2.yaml
-- imgedit-spark1.yaml
+- comfyui-spark1.yaml
 - nomad-hk2.yaml
 - nas-qnap.yaml
 

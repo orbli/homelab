@@ -1,0 +1,15 @@
+# Egress to spark1 for headless ComfyUI (container `comfyui`, port 8188) —
+# the single GPU residency on that box, serving Qwen-Image-Edit-2511 bf16.
+# Consumed by BOTH the laserprep stylize pod (production renders via the
+# ComfyUI queue) and the browser for interactive graph exploration:
+#   http://comfyui-spark1.networking.svc.home-hk1-cluster.orbb.li:8188
+apiVersion: v1
+kind: Service
+metadata:
+  name: comfyui-spark1
+  namespace: networking
+  annotations:
+    tailscale.com/tailnet-ip: "100.99.244.49"
+spec:
+  type: ExternalName
+  externalName: placeholder

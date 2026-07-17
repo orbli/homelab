@@ -1,12 +1,14 @@
 """laserprep web — thin portal for the MCGT photo→laser pipeline.
 
-Flow: upload photo → (optional) proxy to the DGX Spark stylize service →
+Flow: upload photo → (optional) proxy to the in-cluster stylize service
+(which drives spark1's headless ComfyUI and owns the render cache) →
 result page where THE BROWSER does all post-processing live (threshold /
 dither / invert, via prep.js + canvas) and saves a laser-ready PNG with
 pHYs DPI + tEXt params spliced in client-side.
 
-The reproducible artifact is the stylized art in the Spark's render cache
-(keyed input-hash + seed + steps + prompt-version); threshold/dither are
+The reproducible artifact is the stylized art in the stylize service's
+cache PVC (keyed input-hash + seed + steps + recipe-version + cfg); the
+model knobs on the form pass straight through, and threshold/dither are
 cheap deterministic knobs recorded in the downloaded file's metadata.
 
 Server responsibilities: serve the page/JS, proxy stylize, nothing else —
@@ -16,9 +18,11 @@ sheet) lives in the manual_xtool CLI.
 
 import base64
 import hashlib
+import html
 import json
 import os
 import tomllib
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -26,7 +30,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 STYLIZE_UPSTREAM = os.environ.get(
-    "STYLIZE_UPSTREAM", "http://glm-spark1.networking:8001")
+    "STYLIZE_UPSTREAM", "http://stylize:8001")
 CONFIG = Path(os.environ.get("LASERPREP_CONFIG", "/app/configs/materials.toml"))
 APP_DIR = Path(__file__).resolve().parent
 
@@ -49,6 +53,9 @@ _PAGE = """<!doctype html><meta charset="utf-8">
  hr {{ border:none; border-top:2px solid #ddd; margin:1.5rem 0; }}
  code {{ background:#eee; padding:0 .3em; }}
  button {{ padding:.4rem 1rem; }}
+ textarea {{ width:100%; font:13px/1.4 ui-monospace, monospace; }}
+ details {{ margin-top:.8rem; }}
+ summary {{ cursor:pointer; color:#555; }}
 </style>
 <h2>laserprep <small style="color:#888">{version}</small></h2>
 {body}
@@ -61,6 +68,18 @@ def _upstream_health() -> dict:
             return json.loads(r.read())
     except Exception as e:
         return {"model_loaded": False, "error": str(e)}
+
+
+def _stylize_info() -> dict:
+    """Recipe metadata (prompts, defaults) from the stylize service — the
+    portal displays it but never owns it; the recipe lives with the cache."""
+    try:
+        with urllib.request.urlopen(STYLIZE_UPSTREAM + "/info", timeout=3) as r:
+            return json.loads(r.read())
+    except Exception:
+        return {"house_prompt": "", "negative_prompt": "",
+                "defaults": {"steps": 40, "cfg": 4.0,
+                             "fast_steps": 4, "fast_cfg": 1.0}}
 
 
 @app.get("/healthz")
@@ -79,8 +98,10 @@ def index():
         f'<option value="{name}">{name} — {m.get("description", "")}</option>'
         for name, m in MATERIALS.items())
     up = _upstream_health().get("model_loaded", False)
-    up_note = ("🟢 stylize model loaded" if up else
-               "🔴 stylize upstream not ready — raw photos can't be converted yet")
+    up_note = ("🟢 model backend (ComfyUI) reachable" if up else
+               "🔴 stylize backend not ready — raw photos can't be converted yet")
+    info = _stylize_info()
+    d = info["defaults"]
     body = f"""
 <p>Pipeline: <b>photo → stylize (GPU line art) → tune &amp; save in the browser</b>.<br>
 Threshold/dither happen live on the result page — nothing to choose here.</p>
@@ -95,6 +116,22 @@ Threshold/dither happen live on the result page — nothing to choose here.</p>
  <label>Width (mm) <input type="number" name="width_mm" value="150" step="0.1" min="5" max="600"></label>
  <label>DPI <input type="number" name="dpi" value="318" step="1" min="72" max="1200">
    <small>cork wants ~305 (120 lines/cm)</small></label>
+ <details>
+  <summary>Model knobs — house recipe shown; edit only to experiment</summary>
+  <label>Prompt
+   <textarea name="prompt" rows="5">{html.escape(info["house_prompt"])}</textarea></label>
+  <label>Negative prompt <small>(active only with CFG &gt; 1; fast mode ignores it)</small>
+   <textarea name="neg" rows="3">{html.escape(info["negative_prompt"])}</textarea></label>
+  <div class="row">
+   <label>Steps <input type="number" name="steps" min="1" max="100"
+     placeholder="{d['steps']} ({d['fast_steps']} fast)"></label>
+   <label>CFG <input type="number" name="cfg" min="1" max="10" step="0.5"
+     placeholder="{d['cfg']:g} ({d['fast_cfg']:g} fast)"></label>
+  </div>
+  <p><small>CFG &gt; 1 ≈ doubles render time (two model passes per step).
+  Blank fields use the defaults. Every distinct recipe is cached under its
+  own version hash — experiments never overwrite house renders.</small></p>
+ </details>
  <button style="margin-top:1rem">Process</button>
 </form>
 <p>Stylization upstream: <code>{STYLIZE_UPSTREAM}</code>
@@ -109,7 +146,11 @@ async def prep(file: UploadFile = File(...),
                dpi: float = Form(318.0),
                stylize_first: str = Form(""),
                fast_stylize: str = Form(""),
-               seed: int = Form(42)):
+               seed: int = Form(42),
+               prompt: str = Form(""),
+               neg: str = Form(""),
+               steps: str = Form(""),
+               cfg: str = Form("")):
     data = await file.read()
     if len(data) > 30 * 2**20:
         return JSONResponse({"error": "upload > 30MB"}, status_code=413)
@@ -120,13 +161,26 @@ async def prep(file: UploadFile = File(...),
 
     art, render_info, cache_state = data, {}, None
     if stylize_first:
-        url = (f"{STYLIZE_UPSTREAM}/stylize?seed={seed}"
-               + ("&fast=1" if fast_stylize else ""))
+        q = {"seed": seed}
+        if fast_stylize:
+            q["fast"] = 1
+        try:
+            if steps.strip():
+                q["steps"] = int(steps)
+            if cfg.strip():
+                q["cfg"] = float(cfg)
+        except ValueError:
+            return JSONResponse({"error": "steps/cfg must be numeric"}, 422)
+        if prompt.strip():
+            q["prompt"] = prompt.strip()
+        if neg.strip():
+            q["neg"] = neg.strip()
+        url = f"{STYLIZE_UPSTREAM}/stylize?" + urllib.parse.urlencode(q)
         req = urllib.request.Request(
             url, data=data, method="POST",
             headers={"Content-Type": "application/octet-stream"})
         try:
-            with urllib.request.urlopen(req, timeout=900) as r:
+            with urllib.request.urlopen(req, timeout=1200) as r:
                 art = r.read()
                 cache_state = r.headers.get("X-Stylize-Cache")
                 render_info = json.loads(r.headers.get("X-Render-Manifest", "{}"))
@@ -137,10 +191,10 @@ async def prep(file: UploadFile = File(...),
             if body:
                 try:
                     detail = json.loads(body)
-                    if detail.get("error") == "model not loaded yet":
-                        hint = ("the stylize model is (re)loading — takes ~4-5 "
-                                "min after a restart; retry shortly. Cached "
-                                "photo+seed combos still work during reload.")
+                    if detail.get("error") == "model backend unreachable":
+                        hint = ("spark1's ComfyUI is down or restarting — "
+                                "check the comfyui container. Cached "
+                                "photo+seed combos still work meanwhile.")
                 except Exception:
                     detail = body.decode(errors="replace")[:300]
             return JSONResponse(
@@ -149,16 +203,21 @@ async def prep(file: UploadFile = File(...),
 
     stem = os.path.splitext(os.path.basename(file.filename or "image"))[0]
     mime = "image/png" if art[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
-    cfg = {
+    lp = {
         "artSrc": f"data:{mime};base64,{base64.b64encode(art).decode()}",
         "width_mm": width_mm, "dpi": dpi,
         "material": {"name": material, **mat},
         "seed": seed, "steps": render_info.get("steps"),
+        "true_cfg": render_info.get("cfg"),
+        "prompt": prompt.strip() or None, "neg": neg.strip() or None,
         "input_sha256": input_sha, "stem": stem,
         "stylized": bool(stylize_first),
     }
     cache_note = " · served from cache" if cache_state == "hit" else ""
-    sty_head = (f'<h3>Stylized line art <small>seed {seed}{cache_note} · '
+    recipe = (f'seed {seed} · steps {render_info.get("steps", "?")} · '
+              f'cfg {render_info.get("cfg", "?")}'
+              + (" · custom prompt" if prompt.strip() or neg.strip() else ""))
+    sty_head = (f'<h3>Stylized line art <small>{recipe}{cache_note} · '
                 f'<a id="openart" href="#" target="_blank">open full</a></small></h3>'
                 if stylize_first else
                 '<h3>Input art <small><a id="openart" href="#" target="_blank">'
@@ -202,7 +261,7 @@ async def prep(file: UploadFile = File(...),
 <p><small>Dither dots are {25.4 / dpi:.3f}mm at {dpi:g}dpi; this material holds
 features ≥ {mat.get("min_feature_mm", "?")}mm — burn a test tile before
 trusting dithered tone. Saved PNG embeds DPI + all parameters.</small></p>
-<script>window.LP = {json.dumps(cfg)};</script>
+<script>window.LP = {json.dumps(lp)};</script>
 <script src="/prep.js"></script>"""
     return _PAGE.format(version=app.version, body=body)
 
@@ -225,7 +284,7 @@ async def stylize(request: Request, file: UploadFile = File(...)):
         data=data, method="POST",
         headers={"Content-Type": file.content_type or "application/octet-stream"})
     try:
-        with urllib.request.urlopen(req, timeout=900) as r:
+        with urllib.request.urlopen(req, timeout=1200) as r:
             return Response(content=r.read(),
                             media_type=r.headers.get("Content-Type", "image/png"),
                             headers={k: v for k, v in r.headers.items()

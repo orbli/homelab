@@ -7,6 +7,7 @@ resources:
 - namespace.yaml
 - service.yaml
 - deployment.yaml
+- stylize.yaml
 
 # Source of truth for the package is ~/workbench/manual_xtool (copied here on
 # change). Hash-suffixed ConfigMaps roll the Deployment on every edit.
@@ -15,6 +16,9 @@ configMapGenerator:
   files:
   - files/server.py
   - files/prep.js
+- name: laserprep-stylize-src
+  files:
+  - files/stylize_server.py
 - name: laserprep-config
   files:
   - files/materials.toml
