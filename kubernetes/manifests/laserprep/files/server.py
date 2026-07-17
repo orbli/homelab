@@ -44,9 +44,9 @@ _PAGE = """<!doctype html><meta charset="utf-8">
  .warn {{ background:#fff3cd; padding:.6rem; border-radius:6px; }}
  .row {{ display:flex; gap:1rem; align-items:center; flex-wrap:wrap;
         margin:.6rem 0; }}
- .panes {{ display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start; }}
- .pane {{ flex:1 1 420px; min-width:300px; }}
+ .pane {{ margin-bottom:1rem; }}
  .cap {{ font-size:.85em; color:#555; margin-bottom:.2rem; }}
+ hr {{ border:none; border-top:2px solid #ddd; margin:1.5rem 0; }}
  code {{ background:#eee; padding:0 .3em; }}
  button {{ padding:.4rem 1rem; }}
 </style>
@@ -186,18 +186,17 @@ async def prep(file: UploadFile = File(...),
  <a id="openfull" href="#" target="_blank">open full</a>
  <button id="snapbtn" title="pin the current config/result for side-by-side comparison">📌 Snapshot</button>
 </div>
-<div class="panes">
- <div class="pane">
-  <div class="cap" id="livecap">live</div>
-  <canvas id="preview"></canvas>
- </div>
- <div class="pane" id="snappane" style="display:none">
-  <div class="cap"><span id="snapcap"></span> ·
-   <a id="opensnap" href="#" target="_blank">open full</a> ·
-   <a id="snapclear" href="#">clear</a></div>
-  <canvas id="snap"></canvas>
- </div>
+<div class="pane">
+ <div class="cap" id="livecap">live</div>
+ <canvas id="preview"></canvas>
 </div>
+<div class="pane" id="snappane" style="display:none">
+ <div class="cap"><span id="snapcap"></span> ·
+  <a id="opensnap" href="#" target="_blank">open full</a> ·
+  <a id="snapclear" href="#">clear</a></div>
+ <canvas id="snap"></canvas>
+</div>
+<hr>
 {sty_head}
 <img id="art">
 <p><small>Dither dots are {25.4 / dpi:.3f}mm at {dpi:g}dpi; this material holds
