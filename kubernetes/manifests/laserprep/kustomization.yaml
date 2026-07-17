@@ -14,14 +14,7 @@ configMapGenerator:
 - name: laserprep-web-src
   files:
   - files/server.py
-- name: laserprep-pkg-src
-  files:
-  - files/laserprep/__init__.py
-  - files/laserprep/materials.py
-  - files/laserprep/prep.py
-  - files/laserprep/vectorize.py
-  - files/laserprep/contact.py
-  - files/laserprep/dither.py
+  - files/prep.js
 - name: laserprep-config
   files:
   - files/materials.toml
