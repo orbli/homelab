@@ -222,9 +222,10 @@ async def prep(file: UploadFile = File(...),
                 if stylize_first else
                 '<h3>Input art <small><a id="openart" href="#" target="_blank">'
                 'open full</a></small></h3>')
+    seed_note = f" · seed <b>{seed}</b>" if stylize_first else ""
     body = f"""
 <p><a href="/">&larr; another</a></p>
-<p><b id="dims">computing…</b> · {material}</p>
+<p><b id="dims">computing…</b> · {material}{seed_note}</p>
 <div id="warn"></div>
 <div class="row">
  <label>Mode <select id="mode">
