@@ -1,7 +1,9 @@
 # stylize: CPU-only ComfyUI client that owns the production recipe (the
-# workflow template in stylize_server.py), the render cache (PVC on the
-# QNAP-backed default StorageClass) and render manifests. GPU execution
-# happens on spark1's headless ComfyUI via networking-egress.
+# workflow template in stylize_server.py: BiRefNet subject matte -> crop ->
+# Qwen edit -> mask whiteout, RGBA output whose alpha = subject mask), the
+# render cache (PVC on the QNAP-backed default StorageClass), render
+# manifests and the async job table. GPU execution happens on spark1's
+# headless ComfyUI (custom `laserprep` node pack) via networking-egress.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
