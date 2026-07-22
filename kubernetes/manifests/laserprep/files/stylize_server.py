@@ -63,18 +63,22 @@ DEFAULTS = {"steps": 40, "cfg": 4.0, "fast_steps": 4, "fast_cfg": 1.0,
             "mp": 1.0, "pad_pct": 9.0, "dilate_pct": 2.0, "shadow_lift": 1.0}
 
 NEGATIVE_PROMPT = (
-    "photo, photorealistic, color, gray shading, solid black areas, blurry, "
-    "soft focus, background scenery, cast shadow, ground shadow, drop shadow, "
-    "watermark, text, broken whiskers, dashed lines, doubled outlines, "
-    "extra whiskers, extra limbs, human face, collar text"
+    "photo, photorealistic, color, sepia, color tint, colored paper, "
+    "parchment, beige background, watercolor, gray shading, solid black "
+    "areas, blurry, soft focus, background scenery, cast shadow, ground "
+    "shadow, drop shadow, watermark, text, broken whiskers, dashed lines, "
+    "doubled outlines, extra whiskers, extra limbs, human face, collar text"
 )
 
+# "black-and-white … black ink" is load-bearing: without it the model
+# drifts into sepia vintage engravings whose luma dithers to mud.
 HOUSE_PROMPT = (
-    "Convert your pet photo into a refined pen-line engraving portrait. "
+    "Convert your pet photo into a refined black-and-white pen-line "
+    "engraving portrait, strictly monochrome black ink on pure white. "
     "Directional hatching strokes that follow the fur growth, "
     "stipple shading, pure white background, no solid black blocks, no gray "
-    "tones. The subject only, background removed, no cast shadow and no "
-    "ground shadow under the subject."
+    "tones, no color. The subject only, background removed, no cast shadow "
+    "and no ground shadow under the subject."
 )
 
 WHISKER_ADD = (

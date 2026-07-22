@@ -397,6 +397,7 @@ if (typeof document !== "undefined" && window.LP) (function () {
   let gray = null, mask = null, W = 0, H = 0, curBin = null,
       blobUrl = null, artUrl = null, snapUrl = null;
   let procCache = { key: null, gray: null };
+  let lastAutoMorph = 0;
 
   function fmt(x) { return Math.round(x * 10) / 10; }
   function mmToPx(mm) { return mm / 25.4 * cfg.dpi; }
@@ -526,11 +527,25 @@ if (typeof document !== "undefined" && window.LP) (function () {
     else if (cfg.material.default_strategy === "manual") {
       $("mode").value = "manual"; $("cut").value = cfg.material.manual_threshold;
     }
-    $("morph").value = cfg.material.morph_px || 0;
+    lastAutoMorph = isDither($("mode").value) ? 0
+      : (cfg.material.morph_px || 0);
+    $("morph").value = lastAutoMorph;
     render();
   };
 
-  ["mode"].forEach(id => $(id).addEventListener("change", render));
+  function isDither(mode) {
+    return mode === "bayer" || DITHER_KERNELS[mode] !== undefined;
+  }
+
+  $("mode").addEventListener("change", () => {
+    // material morph default (+1px on cork) fattens hatching after a
+    // threshold, but dilating dither dots fuses the pattern solid — the
+    // default flips with the mode family; the operator can still override
+    const want = isDither($("mode").value) ? 0 : (cfg.material.morph_px || 0);
+    if (+$("morph").value === lastAutoMorph) $("morph").value = want;
+    lastAutoMorph = want;
+    render();
+  });
   ["cut", "bp", "wp", "gamma", "usm_mm", "usm_amt", "morph"]
     .forEach(id => $(id).addEventListener("input", renderSoon));
   ["despeckle", "serpentine"].forEach(id => $(id).addEventListener("change", render));
