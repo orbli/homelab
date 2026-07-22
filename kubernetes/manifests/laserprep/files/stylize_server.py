@@ -324,7 +324,13 @@ _load_recent_walls()
 
 def _eta(steps: int, cfg: float, mp: float) -> float | None:
     walls = _recent_walls.get(_eta_bucket(steps, cfg, mp))
-    return round(sum(walls) / len(walls), 1) if walls else None
+    if walls:
+        return round(sum(walls) / len(walls), 1)
+    if not steps:
+        return None
+    # no history for this recipe yet: estimate from per-step cost measured
+    # on the GB10 (cfg>1 doubles model passes; ~linear in megapixels)
+    return round(steps * mp * (8.8 if cfg > 1 else 6.7) + 12, 1)
 
 
 def _render_job(key: str, data: bytes, ext: str, params: dict) -> None:

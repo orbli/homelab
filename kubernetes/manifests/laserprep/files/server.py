@@ -37,8 +37,16 @@ STYLIZE_UPSTREAM = os.environ.get(
 CONFIG = Path(os.environ.get("LASERPREP_CONFIG", "/app/configs/materials.toml"))
 APP_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="laserprep", version="0.3.0")
+app = FastAPI(title="laserprep", version="0.3.1")
 MATERIALS: dict = tomllib.loads(CONFIG.read_text())
+
+# Cache-buster: browsers heuristically cache JS for ~10% of its mtime age
+# (no Cache-Control header), so a redeploy can leave clients running old
+# prep.js against new HTML — the result page then never polls its job.
+_JS_VER = hashlib.sha256(
+    (APP_DIR / "prep.js").read_bytes() +
+    (APP_DIR / "index.js").read_bytes()).hexdigest()[:8]
+_NO_CACHE = {"Cache-Control": "no-cache"}
 
 _PAGE = """<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -107,12 +115,14 @@ def healthz():
 
 @app.get("/prep.js")
 def prep_js():
-    return FileResponse(APP_DIR / "prep.js", media_type="text/javascript")
+    return FileResponse(APP_DIR / "prep.js", media_type="text/javascript",
+                        headers=_NO_CACHE)
 
 
 @app.get("/index.js")
 def index_js():
-    return FileResponse(APP_DIR / "index.js", media_type="text/javascript")
+    return FileResponse(APP_DIR / "index.js", media_type="text/javascript",
+                        headers=_NO_CACHE)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -197,8 +207,8 @@ save in the browser</b>. Threshold/dither happen live on the result page.</p>
     {k: {"prompt": v["prompt"], "neg": v["neg"],
          "shadow_lift": v["shadow_lift"]}
      for k, v in info.get("presets", {}).items()})};</script>
-<script src="/prep.js"></script>
-<script src="/index.js"></script>
+<script src="/prep.js?v={_JS_VER}"></script>
+<script src="/index.js?v={_JS_VER}"></script>
 <p>Stylization upstream: <code>{STYLIZE_UPSTREAM}</code>
  (<a href="/stylize/status">status</a>)</p>"""
     return _PAGE.format(version=app.version, body=body)
@@ -383,7 +393,7 @@ features ≥ {mat.get("min_feature_mm", "?")}mm (checked live above) — burn a
 test tile before trusting dithered tone. Saved PNG embeds DPI + all
 parameters and can be dropped on the front page to restore them.</small></p>
 <script>window.LP = {json.dumps(lp)};</script>
-<script src="/prep.js"></script>"""
+<script src="/prep.js?v={_JS_VER}"></script>"""
     return _PAGE.format(version=app.version, body=body)
 
 
