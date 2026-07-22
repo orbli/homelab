@@ -23,6 +23,7 @@ poisoning old entries. Same request = same bytes with zero GPU time.
 import hashlib
 import json
 import os
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -136,15 +137,31 @@ def _log(entry: dict) -> None:
         f.write(json.dumps(entry) + "\n")
 
 
+# ComfyUI reachability is polled in the background: the k8s readiness probe
+# has a 1s timeout, and a synchronous /system_stats round-trip through the
+# tailscale egress hop routinely exceeds it (pod flapped NotReady for days).
+_comfy_state = {"model_loaded": False, "comfy_error": "not checked yet"}
+
+
+def _probe_comfy_loop():
+    while True:
+        try:
+            ok = requests.get(COMFY + "/system_stats", timeout=3).ok
+            _comfy_state.update({"model_loaded": ok, "comfy_error": None})
+        except Exception as e:
+            _comfy_state.update({"model_loaded": False, "comfy_error": str(e)})
+        time.sleep(15)
+
+
+threading.Thread(target=_probe_comfy_loop, daemon=True).start()
+
+
 @app.get("/healthz")
 def healthz():
-    try:
-        up = requests.get(COMFY + "/system_stats", timeout=3).ok
-        detail = {}
-    except Exception as e:
-        up, detail = False, {"comfy_error": str(e)}
-    return {"ok": True, "model_loaded": up, "workflow_shape": WORKFLOW_SHAPE,
-            "comfy": COMFY, **detail}
+    detail = ({"comfy_error": _comfy_state["comfy_error"]}
+              if _comfy_state["comfy_error"] else {})
+    return {"ok": True, "model_loaded": _comfy_state["model_loaded"],
+            "workflow_shape": WORKFLOW_SHAPE, "comfy": COMFY, **detail}
 
 
 @app.get("/info")
