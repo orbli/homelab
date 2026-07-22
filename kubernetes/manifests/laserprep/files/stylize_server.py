@@ -53,8 +53,8 @@ NEGATIVE_PROMPT = (
 )
 
 HOUSE_PROMPT = (
-    "Convert this photo into a highly detailed black and white pen-and-ink "
-    "line drawing. Directional hatching strokes that follow the fur growth, "
+    "Convert your pet photo into a refined pen-line engraving portrait. "
+    "Directional hatching strokes that follow the fur growth, "
     "stipple shading, pure white background, no solid black blocks, no gray "
     "tones. The subject only, background removed, no cast shadow and no "
     "ground shadow under the subject."
