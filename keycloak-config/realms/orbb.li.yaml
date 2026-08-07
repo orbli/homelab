@@ -50,6 +50,15 @@ users:
     emailVerified: true
     groups:
       - mgroup
+    # Grafana access: realm 'admin' -> GrafanaAdmin, client role -> org Admin
+    # (grafana.ini role_attribute_path reads realm_roles / resource_access.grafana.roles,
+    # emitted by the 'realm-roles' / 'client-roles' protocol mappers on the grafana client).
+    # role_attribute_strict=true means a user with NEITHER role is denied login.
+    realmRoles:
+      - admin
+    clientRoles:
+      grafana:
+        - grafana-admin
 
 # ---------------------------------------------------------------------------
 # Custom client scope that holds the protocol mappers we want
