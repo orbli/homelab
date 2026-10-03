@@ -117,13 +117,30 @@
         // re-auth prompt. First-match-wins, so this scoped `accept`
         // must sit ABOVE the broader admin `check` rule below. Scope is
         // deliberately narrow — only mail@orbb.li, only tag:homelab.
-        // zura35 and the other infra tags stay on `check` via the next
-        // rule.
+        // zura35 and the other infra tags stay on `check` via the
+        // rules below.
         {
             "action": "accept",
             "src":    ["mail@orbb.li"],
             "dst":    ["tag:homelab"],
             "users":  ["autogroup:nonroot", "root"],
+        },
+        // Jenny (zura35) operates the mcgt business from home-gb1-pi1
+        // (Manchester Pi, tag:homelab): `ssh mcgt@home-gb1-pi1`.
+        // Granted by email so it does NOT depend on her holding the
+        // Admin role in the console (the admin rule below would only
+        // cover her if she does). Scope: the `mcgt` unix user only.
+        // SSH rules can't target a single tagged host, so dst is
+        // tag:homelab — in practice only home-gb1-pi1 has an `mcgt`
+        // account, so the login fails on every other homelab node.
+        // If that ever stops being true, give the Pi its own tag and
+        // narrow dst to it. `check` (browser re-auth, 12h) matches
+        // the convention for everyone except mail@orbb.li.
+        {
+            "action": "check",
+            "src":    ["zura35@gmail.com"],
+            "dst":    ["tag:homelab"],
+            "users":  ["mcgt"],
         },
         // Admins can SSH into tagged infra hosts.
         {
@@ -131,6 +148,27 @@
             "src":    ["autogroup:admin"],
             "dst":    ["tag:k8s-host", "tag:exit-node", "tag:homelab"],
             "users":  ["autogroup:nonroot", "root"],
+        },
+    ],
+
+    // ------------------------------------------------------------------
+    // SSH policy tests. Evaluated by Tailscale's control plane on every
+    // sync; a failing assertion REJECTS the whole policy push, so the
+    // live ACL can never silently lose these grants.
+    // ------------------------------------------------------------------
+    "sshTests": [
+        // Jenny can log in as mcgt on homelab nodes (i.e. home-gb1-pi1),
+        // subject to a check prompt.
+        {
+            "src":   "zura35@gmail.com",
+            "dst":   ["tag:homelab"],
+            "check": ["mcgt"],
+        },
+        // Owner keeps prompt-free access, including root.
+        {
+            "src":    "mail@orbb.li",
+            "dst":    ["tag:homelab"],
+            "accept": ["mcgt", "o", "root"],
         },
     ],
 
