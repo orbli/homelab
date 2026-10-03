@@ -164,12 +164,14 @@
             "dst":   ["tag:homelab"],
             "check": ["mcgt"],
         },
-        // Owner keeps prompt-free access, including root.
-        {
-            "src":    "mail@orbb.li",
-            "dst":    ["tag:homelab"],
-            "accept": ["mcgt", "o", "root"],
-        },
+        // NOTE: there is deliberately no `accept` assertion for
+        // mail@orbb.li -> tag:homelab. The validator reports `check`
+        // for that pair: Tailscale evaluates SSH rules most-restrictive
+        // first (all `check` rules, then `accept`), NOT in file order,
+        // and mail@orbb.li also matches the autogroup:admin `check`
+        // rule. So the scoped `accept` rule above does not currently
+        // win. Fixing that means taking mail@orbb.li out of the admin
+        // check rule's src (list the other admins explicitly).
     ],
 
     // ------------------------------------------------------------------
