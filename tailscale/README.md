@@ -55,25 +55,58 @@ gh secret set TS_API_CLIENT_SECRET --body "<client-secret>"
 
 Or via the GitHub UI: Repo → Settings → Secrets and variables → Actions.
 
-## How to add a friend to filebrowser access
+## Membership model: deny-all until named by email
 
-Two-file edit, one PR:
+There are no groups and no `autogroup:member` rules. Every place the
+policy asks "who may do this" lists the current members by email:
+
+- `acls` NAS-gate rule (`company-hk3-nas:14180`)
+- `acls` exit-node rule (`autogroup:internet:*`, any exit node)
+- `ssh` self-SSH rule (`autogroup:self`)
+- `nodeAttrs` `funnel`
+
+A freshly invited user therefore matches nothing: their client shows
+only their own devices (Tailscale trims the netmap to reachable
+peers). Enable **Settings → User management → Manually approve new
+users** in the admin console as well, so the invite link alone does
+not admit anyone.
+
+### Add a friend to filebrowser access
 
 1. **`keycloak-config/realms/orbb.li.yaml`** — add the friend's email
    to `users:` with `groups: [mgroup]`. (Lets them through oauth2-proxy
    once they auth via Keycloak.)
-2. **`tailscale/acl.hujson`** — add the friend's email to
-   `groups.group:friends`. (Lets their tailnet device reach
-   `company-hk3-nas:14180` over WireGuard.)
+2. **`tailscale/acl.hujson`** — add the friend's email to the `src` of
+   the NAS-gate rule (and, if wanted, the exit-node / self-SSH / funnel
+   lists). Push; `gh run watch`.
 3. Send the friend a Tailscale invite (admin console:
    Users → Invite) and the URL `http://company-hk3-nas:14180/`.
-4. Friend signs into Tailscale, signs into filebrowser via Google,
-   sees files.
 
 Both layers are needed: Tailscale gates network access; Keycloak gates
-application access. Without the ACL update they can't reach the NAS;
-without the Keycloak update they reach the NAS but get a 403 at
-oauth2-proxy.
+application access.
+
+### Guest on the Sparks only (pattern used for kunbu@kunbu.com)
+
+Three rules, all keyed by email, nothing else touched:
+
+- `acls`: email → `home-hk2-spark1:*`, `home-hk2-spark2:*` (hosts
+  aliases, stable tailnet IPs; drop one to limit to a single Spark).
+- `ssh`: email → `tag:spark`, `users: ["<unixuser>"]`, `check`. The
+  unix user must exist on the box, locked password, NOT in `sudo` or
+  `docker`. Only spark1 runs Tailscale SSH today.
+- `grants`: email → `autogroup:internet` **via** `tag:k8s`, which among
+  exit-advertising nodes is only `home-hk1-cluster-connector`. The
+  guest must NOT be in the unpinned exit-node `acls` rule.
+
+`tests` / `sshTests` assert each of these so a later edit cannot
+silently widen the guest's reach.
+
+### tag:spark
+
+`home-hk2-spark1/2` are meant to carry `tag:spark` and nothing else.
+The tag is never a `src`, so a Spark can be reached but can never
+initiate a tailnet connection. Retagging is done in the admin console
+(Machines → … → Edit ACL tags); the on-device prefs carry no tags.
 
 ## How the sync works
 
