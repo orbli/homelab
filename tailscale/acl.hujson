@@ -10,10 +10,10 @@
 
 {
     // ------------------------------------------------------------------
-    // Groups: user collections for use in acls/ssh rules. Currently
-    // empty — filebrowser-gate access is granted to autogroup:member
-    // (any tailnet member) at the network layer; application-layer
-    // gating (Keycloak realm + mgroup) is the actual authorization.
+    // Groups: user collections for use in acls/ssh rules. Deliberately
+    // empty: the policy names the three current members by email
+    // everywhere a principal list is needed (see the acls below), so a
+    // newly joined member matches NOTHING until an email is added.
     // ------------------------------------------------------------------
     "groups": {},
 
@@ -34,6 +34,12 @@
         // rule below). Owner restricted to mail@orbb.li — no one else
         // can assert this tag.
         "tag:homelab":      ["mail@orbb.li"],
+        // tag:spark marks the two GB10 Spark boxes (home-hk2-spark1/2).
+        // It is deliberately NOT a `src` in any acl rule: a Spark can be
+        // reached inbound by whoever holds an accept rule pointing at it,
+        // but can never initiate a tailnet connection itself (default
+        // deny). Owner restricted to mail@orbb.li.
+        "tag:spark":        ["mail@orbb.li"],
     },
 
     // ------------------------------------------------------------------
@@ -42,7 +48,12 @@
     // assigned identifiers like the tailnet's *.ts.net suffix.
     // ------------------------------------------------------------------
     "hosts": {
-        "company-hk3-nas": "100.119.56.40",
+        "company-hk3-nas":  "100.119.56.40",
+        // Spark boxes by stable tailnet IP, so a network rule can target
+        // ONE Spark (tags cover both). SSH rules cannot use hosts, only
+        // tags, so SSH grants always land on tag:spark = both boxes.
+        "home-hk2-spark1":  "100.99.244.49",
+        "home-hk2-spark2":  "100.112.234.109",
     },
 
     // ------------------------------------------------------------------
@@ -68,22 +79,25 @@
             "dst": ["*:*"],
         },
 
-        // Filebrowser-gate's port: open to any tailnet member at the
-        // network layer. The actual authorization is at the application
-        // layer (oauth2-proxy + Keycloak; only users in the Keycloak
-        // mgroup realm group get past the OIDC check). This makes the
-        // tailnet-side rule simple — anyone you invite to the tailnet
-        // gets HTTP reachability to the gate; the gate then makes the
-        // accept/deny call per-user. No SSH, no jellyfin, no Container
-        // Station UI, no QNAP admin UI, no other port on the NAS is
-        // exposed by this rule.
+        // Filebrowser-gate's port: open to the three current members at
+        // the network layer. The actual authorization is at the
+        // application layer (oauth2-proxy + Keycloak; only users in the
+        // Keycloak mgroup realm group get past the OIDC check). Members
+        // are listed by email on purpose (was autogroup:member): a newly
+        // invited user gets NO reachability until their email is added
+        // here. No SSH, no jellyfin, no Container Station UI, no QNAP
+        // admin UI, no other port on the NAS is exposed by this rule.
         {
             "action": "accept",
-            "src": ["autogroup:member"],
+            "src": [
+                "mail@orbb.li",
+                "zura35@gmail.com",
+                "skyhook.orange@gmail.com",
+            ],
             "dst": ["company-hk3-nas:14180"],
         },
 
-        // All tailnet members can use ANY designated exit node for
+        // The three current members can use ANY designated exit node for
         // their internet-bound traffic. `autogroup:internet` is the
         // canonical Tailscale destination for "route through this
         // device to the public internet" — it grants ONLY internet
@@ -92,11 +106,28 @@
         // can route their internet through it, but cannot reach the
         // homelab device's own SSH/HTTP/anything on any port. Port
         // access is governed by other rules above (default deny).
+        // Listed by email (was autogroup:member) so a new member gets no
+        // exit-node access by default; a pinned-exit-node grant for a
+        // guest lives in the `grants` section below instead.
         {
             "action": "accept",
-            "src": ["autogroup:member"],
+            "src": [
+                "mail@orbb.li",
+                "zura35@gmail.com",
+                "skyhook.orange@gmail.com",
+            ],
             "dst": ["autogroup:internet:*"],
         },
+
+        // --- Guest template (disabled) -------------------------------
+        // A guest who may use ONE Spark and nothing else. Uncomment and
+        // fill in the email. Network layer only; SSH is the `ssh` rule
+        // template further down, exit node is the `grants` template.
+        // {
+        //     "action": "accept",
+        //     "src":    ["guest@example.com"],
+        //     "dst":    ["home-hk2-spark1:*"],
+        // },
     ],
 
     // ------------------------------------------------------------------
@@ -106,10 +137,16 @@
     // the underlying ACL accept.
     // ------------------------------------------------------------------
     "ssh": [
-        // Members can SSH into their own devices (laptop -> laptop etc).
+        // Current members can SSH into their own devices (laptop ->
+        // laptop etc). Listed by email (was autogroup:member) so even
+        // self-SSH is off for a freshly joined user until added here.
         {
             "action": "check",
-            "src":    ["autogroup:member"],
+            "src": [
+                "mail@orbb.li",
+                "zura35@gmail.com",
+                "skyhook.orange@gmail.com",
+            ],
             "dst":    ["autogroup:self"],
             "users":  ["autogroup:nonroot", "root"],
         },
@@ -122,7 +159,7 @@
         {
             "action": "accept",
             "src":    ["mail@orbb.li"],
-            "dst":    ["tag:homelab"],
+            "dst":    ["tag:homelab", "tag:spark"],
             "users":  ["autogroup:nonroot", "root"],
         },
         // Jenny (zura35) operates the mcgt business from home-gb1-pi1
@@ -139,16 +176,52 @@
         {
             "action": "check",
             "src":    ["zura35@gmail.com"],
-            "dst":    ["tag:homelab"],
+            "dst":    ["tag:homelab", "tag:spark"],
             "users":  ["mcgt"],
         },
         // Admins can SSH into tagged infra hosts.
         {
             "action": "check",
             "src":    ["autogroup:admin"],
-            "dst":    ["tag:k8s-host", "tag:exit-node", "tag:homelab"],
+            "dst":    ["tag:k8s-host", "tag:exit-node", "tag:homelab", "tag:spark"],
             "users":  ["autogroup:nonroot", "root"],
         },
+
+        // --- Guest template (disabled) -------------------------------
+        // Guest SSH onto the Spark as a dedicated, non-sudo, non-docker
+        // unix user (create it first: `sudo adduser guest`). `check` =
+        // browser re-auth every 12h. dst is tag:spark (= both boxes;
+        // SSH rules can't name one host) but only spark1 runs Tailscale
+        // SSH (`RunSSH`), and only spark1 has the unix user, so spark2
+        // refuses anyway.
+        // {
+        //     "action": "check",
+        //     "src":    ["guest@example.com"],
+        //     "dst":    ["tag:spark"],
+        //     "users":  ["guest"],
+        // },
+    ],
+
+    // ------------------------------------------------------------------
+    // Grants (newer syntax; coexists with `acls`, both are additive).
+    // Used only where plain acls can't express it: the `via` field pins
+    // internet egress to exit nodes carrying a given tag.
+    // ------------------------------------------------------------------
+    "grants": [
+        // --- Guest template (disabled) -------------------------------
+        // Guest may use ONLY home-hk1-cluster-connector as exit node.
+        // `via` must be a tag; the connector is tag:homelab + tag:k8s.
+        // tag:homelab is on six exit-capable boxes, but tag:k8s is on
+        // the connector plus the k8s-operator proxy pods, none of which
+        // advertise an exit node — so via tag:k8s = the connector only.
+        // The guest must NOT appear in the autogroup:internet acl above,
+        // or that unpinned rule would let them use any exit node.
+        // {
+        //     "src": ["guest@example.com"],
+        //     "dst": ["autogroup:internet"],
+        //     "via": ["tag:k8s"],
+        //     "ip":  ["*"],
+        // },
     ],
 
     // ------------------------------------------------------------------
@@ -161,7 +234,7 @@
         // subject to a check prompt.
         {
             "src":   "zura35@gmail.com",
-            "dst":   ["tag:homelab"],
+            "dst":   ["tag:homelab", "tag:spark"],
             "check": ["mcgt"],
         },
         // NOTE: there is deliberately no `accept` assertion for
@@ -172,6 +245,25 @@
         // rule. So the scoped `accept` rule above does not currently
         // win. Fixing that means taking mail@orbb.li out of the admin
         // check rule's src (list the other admins explicitly).
+    ],
+
+    // ------------------------------------------------------------------
+    // Network policy tests. Same semantics as sshTests: a failing
+    // assertion rejects the push. These pin the invariants this file
+    // exists to hold.
+    // ------------------------------------------------------------------
+    "tests": [
+        // Current members keep the filebrowser gate.
+        {
+            "src":    "skyhook.orange@gmail.com",
+            "accept": ["company-hk3-nas:14180"],
+            "deny":   ["company-hk3-nas:22", "home-hk2-spark1:22"],
+        },
+        // A Spark can initiate NOTHING on the tailnet.
+        {
+            "src":  "tag:spark",
+            "deny": ["company-hk3-nas:14180", "home-hk2-spark2:22"],
+        },
     ],
 
     // ------------------------------------------------------------------
@@ -195,7 +287,7 @@
         // Without this, an admin would have to click "approve" in
         // the Tailscale admin console each time a tag:homelab device
         // (re)joins the tailnet or restarts and re-asserts itself as
-        // an exit node. With it, the autogroup:member->internet ACL
+        // an exit node. With it, the members->autogroup:internet ACL
         // above can use these devices as exit nodes immediately.
         "exitNode": ["tag:homelab"],
     },
@@ -204,15 +296,17 @@
     // Node attributes. `funnel` lets a member run `tailscale funnel`
     // to publicly expose their own device on *.ts.net.
     //
-    // Scope: autogroup:member (anyone in the tailnet). This includes
-    // group:mgroup once friends are added, which means friends can
-    // technically Funnel their own devices through your tailnet. Risk
-    // accepted: friends are trusted enough to be in mgroup; Funnel
-    // exposes THEIR device, not yours.
+    // Scope: the three current members by email (was autogroup:member).
+    // Funnel exposes THEIR device, not yours, but a new member should
+    // not get it until deliberately added here.
     // ------------------------------------------------------------------
     "nodeAttrs": [
         {
-            "target": ["autogroup:member"],
+            "target": [
+                "mail@orbb.li",
+                "zura35@gmail.com",
+                "skyhook.orange@gmail.com",
+            ],
             "attr":   ["funnel"],
         },
     ],
