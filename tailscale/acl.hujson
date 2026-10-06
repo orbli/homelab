@@ -119,15 +119,18 @@
             "dst": ["autogroup:internet:*"],
         },
 
-        // --- Guest template (disabled) -------------------------------
-        // A guest who may use ONE Spark and nothing else. Uncomment and
-        // fill in the email. Network layer only; SSH is the `ssh` rule
-        // template further down, exit node is the `grants` template.
-        // {
-        //     "action": "accept",
-        //     "src":    ["guest@example.com"],
-        //     "dst":    ["home-hk2-spark1:*"],
-        // },
+        // --- Guest: kunbu@kunbu.com ----------------------------------
+        // May reach the two Sparks (every port) and nothing else on the
+        // tailnet. Network layer only; SSH is the `ssh` rule further
+        // down, exit node is the `grants` rule. Deliberately NOT in the
+        // exit-node acl above (that one is unpinned = any exit node) and
+        // NOT in the gate / self-SSH / funnel lists. To limit to one
+        // Spark, swap dst for the hosts alias (home-hk2-spark1:*).
+        {
+            "action": "accept",
+            "src":    ["kunbu@kunbu.com"],
+            "dst":    ["tag:spark:*"],
+        },
     ],
 
     // ------------------------------------------------------------------
@@ -187,19 +190,18 @@
             "users":  ["autogroup:nonroot", "root"],
         },
 
-        // --- Guest template (disabled) -------------------------------
-        // Guest SSH onto the Spark as a dedicated, non-sudo, non-docker
-        // unix user (create it first: `sudo adduser guest`). `check` =
-        // browser re-auth every 12h. dst is tag:spark (= both boxes;
-        // SSH rules can't name one host) but only spark1 runs Tailscale
-        // SSH (`RunSSH`), and only spark1 has the unix user, so spark2
-        // refuses anyway.
-        // {
-        //     "action": "check",
-        //     "src":    ["guest@example.com"],
-        //     "dst":    ["tag:spark"],
-        //     "users":  ["guest"],
-        // },
+        // --- Guest: kunbu@kunbu.com ----------------------------------
+        // SSH onto either Spark as the dedicated unix user `kunbu` only
+        // (create it on each box: `sudo adduser kunbu`; keep it OUT of
+        // sudo and docker groups — docker group is root-equivalent).
+        // `check` = browser re-auth every 12h. Note spark2 currently
+        // has Tailscale SSH off (`tailscale set --ssh` to enable).
+        {
+            "action": "check",
+            "src":    ["kunbu@kunbu.com"],
+            "dst":    ["tag:spark"],
+            "users":  ["kunbu"],
+        },
     ],
 
     // ------------------------------------------------------------------
@@ -208,20 +210,20 @@
     // internet egress to exit nodes carrying a given tag.
     // ------------------------------------------------------------------
     "grants": [
-        // --- Guest template (disabled) -------------------------------
-        // Guest may use ONLY home-hk1-cluster-connector as exit node.
+        // --- Guest: kunbu@kunbu.com ----------------------------------
+        // May use ONLY home-hk1-cluster-connector as exit node.
         // `via` must be a tag; the connector is tag:homelab + tag:k8s.
         // tag:homelab is on six exit-capable boxes, but tag:k8s is on
         // the connector plus the k8s-operator proxy pods, none of which
         // advertise an exit node — so via tag:k8s = the connector only.
         // The guest must NOT appear in the autogroup:internet acl above,
         // or that unpinned rule would let them use any exit node.
-        // {
-        //     "src": ["guest@example.com"],
-        //     "dst": ["autogroup:internet"],
-        //     "via": ["tag:k8s"],
-        //     "ip":  ["*"],
-        // },
+        {
+            "src": ["kunbu@kunbu.com"],
+            "dst": ["autogroup:internet"],
+            "via": ["tag:k8s"],
+            "ip":  ["*"],
+        },
     ],
 
     // ------------------------------------------------------------------
@@ -236,6 +238,19 @@
             "src":   "zura35@gmail.com",
             "dst":   ["tag:homelab", "tag:spark"],
             "check": ["mcgt"],
+        },
+        // kunbu reaches the Sparks as `kunbu` (check), never as o/root,
+        // and has no SSH into the rest of the homelab at all.
+        {
+            "src":   "kunbu@kunbu.com",
+            "dst":   ["tag:spark"],
+            "check": ["kunbu"],
+            "deny":  ["o", "root"],
+        },
+        {
+            "src":   "kunbu@kunbu.com",
+            "dst":   ["tag:homelab"],
+            "deny":  ["kunbu", "o", "root"],
         },
         // NOTE: there is deliberately no `accept` assertion for
         // mail@orbb.li -> tag:homelab. The validator reports `check`
@@ -263,6 +278,12 @@
         {
             "src":  "tag:spark",
             "deny": ["company-hk3-nas:14180", "home-hk2-spark2:22"],
+        },
+        // kunbu: both Sparks, any port; nothing else.
+        {
+            "src":    "kunbu@kunbu.com",
+            "accept": ["home-hk2-spark1:22", "home-hk2-spark1:8000", "home-hk2-spark2:22"],
+            "deny":   ["company-hk3-nas:14180", "company-hk3-nas:22"],
         },
     ],
 
