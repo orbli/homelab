@@ -124,12 +124,14 @@
         // tailnet. Network layer only; SSH is the `ssh` rule further
         // down, exit node is the `grants` rule. Deliberately NOT in the
         // exit-node acl above (that one is unpinned = any exit node) and
-        // NOT in the gate / self-SSH / funnel lists. To limit to one
-        // Spark, swap dst for the hosts alias (home-hk2-spark1:*).
+        // NOT in the gate / self-SSH / funnel lists. dst uses the hosts
+        // aliases (stable tailnet IPs) rather than tag:spark:* so the
+        // grant does not depend on the devices' tags; drop one alias to
+        // limit to a single Spark.
         {
             "action": "accept",
             "src":    ["kunbu@kunbu.com"],
-            "dst":    ["tag:spark:*"],
+            "dst":    ["home-hk2-spark1:*", "home-hk2-spark2:*"],
         },
     ],
 
