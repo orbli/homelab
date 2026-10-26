@@ -18,7 +18,7 @@
         # determines the tailscale binary version used by the Connector
         # pod the operator manages (image: tailscale/tailscale:<same>).
         # Bump in lockstep with the gitops-pusher pin in
-        # .github/workflows/tailscale-sync.yml when feasible.
+        # .github/workflows/tailscale-acl-sync.yml when feasible.
         chart_version: "1.98.3"
         release_namespace: networking
         create_namespace: true

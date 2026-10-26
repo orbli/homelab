@@ -5,12 +5,12 @@ on:
     branches: [master]
     paths:
       - 'tailscale/**'
-      - '.github/workflows/tailscale-sync.yml'
+      - '.github/workflows/tailscale-acl-sync.yml'
   pull_request:
     branches: [master]
     paths:
       - 'tailscale/**'
-      - '.github/workflows/tailscale-sync.yml'
+      - '.github/workflows/tailscale-acl-sync.yml'
   workflow_dispatch:
 
 # Installs the `gitops-pusher` binary from tailscale/tailscale (pinned

@@ -2,7 +2,7 @@
 
 This directory holds the **declarative, git-authoritative** ACL for
 the orbb.li primary tailnet. It is reconciled to Tailscale's
-control plane by `.github/workflows/tailscale-sync.yml` on every push
+control plane by `.github/workflows/tailscale-acl-sync.yml` on every push
 to `master` that touches `tailscale/**`. The tailnet identifier is
 not stored in this repo; it lives in the `TS_TAILNET` GH Actions
 secret consumed by the workflow.

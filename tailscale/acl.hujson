@@ -1,7 +1,7 @@
 // Tailnet ACL (orbb.li primary tailnet).
 //
 // Reconciled to Tailscale's control plane by
-// .github/workflows/tailscale-sync.yml on every push to master that
+// .github/workflows/tailscale-acl-sync.yml on every push to master that
 // touches tailscale/**. Tailnet identifier lives in the TS_TAILNET
 // GH Actions secret, not in this repo.
 //
