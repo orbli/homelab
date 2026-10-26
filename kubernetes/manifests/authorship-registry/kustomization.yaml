@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: authorship-registry
+
+resources:
+- namespace.yaml
+- postgres.yaml
+- deployment.yaml
+- service.yaml
+
+commonLabels:
+  app.kubernetes.io/managed-by: argocd
+
+# DEMO ONLY (friend's authorship registry, source: github.com/orbli/authorship-registry).
+# Fake data only; the production target is AWS (Lambda + Aurora DSQL, see that repo's infra/).
+# Secrets are created out-of-band (not in git):
+#   registry-db   password            generated once
+#   registry-app  ADMIN_EMAIL SMTP_USERNAME SMTP_PASSWORD   Gmail app password for outbound mail
+# Public hostname registry-lab.orbb.li is a cloudflared Public Hostname (Zero Trust dashboard)
+# pointing at http://authorship-registry.authorship-registry.svc.cluster.local:80

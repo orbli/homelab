@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authorship-registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authorship-registry
+  template:
+    metadata:
+      labels:
+        app: authorship-registry
+    spec:
+      containers:
+      - name: app
+        image: ghcr.io/orbli/authorship-registry:main
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DB_DIALECT
+          value: postgres
+        - name: PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: registry-db
+              key: password
+        - name: DATABASE_URL
+          value: postgres://registry:$(PG_PASSWORD)@postgres:5432/registry
+        - name: BASE_URL
+          value: https://registry-lab.orbb.li
+        - name: MAIL_DRIVER
+          value: smtp
+        - name: SENDER_EMAIL
+          value: ada739542@gmail.com
+        - name: SMTP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: registry-app
+              key: SMTP_USERNAME
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: registry-app
+              key: SMTP_PASSWORD
+        - name: ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: registry-app
+              key: ADMIN_EMAIL
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 3000
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 3000
+          initialDelaySeconds: 10
+        resources:
+          requests:
+            cpu: 20m
+            memory: 96Mi
+          limits:
+            memory: 256Mi

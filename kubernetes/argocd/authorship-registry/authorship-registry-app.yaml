@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authorship-registry
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: authorship-registry
+    app.kubernetes.io/part-of: demos
+  annotations:
+    argocd.argoproj.io/sync-wave: "70"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/orbli/homelab.git
+    targetRevision: master
+    path: kubernetes/manifests/authorship-registry
+    kustomize: {}
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authorship-registry
+
+  syncPolicy:
+    automated:
+      prune: true
+      # Secrets (registry-db, registry-app) are created out-of-band; keep selfHeal off
+      # like remark42 so a missing secret never turns into a sync fight.
+      selfHeal: false
+    syncOptions:
+    - CreateNamespace=false
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
