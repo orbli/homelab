@@ -2,8 +2,8 @@
 
 orbb.li lives on **Cloudflare** (`nadia`/`pablo` nameservers). This folder tracks it with
 **[DNSControl](https://dnscontrol.org)** (`~/.local/bin/dnscontrol`), same pattern as
-`mcgt/dns` but with its own token: that one is scoped to mcgt.co.uk and belongs to a
-different business, so it is never reused here.
+`mcgt/dns`. Since 2026-10-26 the same Cloudflare token covers both zones (owner's choice);
+`dns/.env` here is a copy of `mcgt/dns/.env`.
 
 ## One-time setup
 
@@ -12,9 +12,10 @@ different business, so it is never reused here.
    - Permissions: **Zone/Zone/Read**, **Zone/DNS/Edit**
 2. `cp .env.example .env` and paste the token into `CF_TOKEN=` (`.env` is git-ignored;
    `creds.json` reads it via `$CF_TOKEN`, so nothing secret is committed).
-3. `./dnsctl.sh import` → dumps the live zone to `imported.js`. Merge its records into
-   `dnsconfig.js`, set `ZONE_IMPORTED = true`, then `./dnsctl.sh preview` must show **no
-   changes** before anything else is edited.
+3. The live zone was imported into `dnsconfig.js` on 2026-10-26 (`preview` showed 0
+   corrections). `dnscontrol get-zones` printed nothing for this zone, so the import was
+   done from the Cloudflare API record list by hand; if `./dnsctl.sh import` is ever needed
+   again, expect to fall back to `GET /zones/<id>/dns_records`.
 
 ## Day-to-day
 
