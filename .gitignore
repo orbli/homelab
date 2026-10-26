@@ -4,3 +4,5 @@
 ansible/secrets/*.yaml
 ansible/secrets/*.yml
 !ansible/secrets/*.example
+# DNSControl token
+dns/.env
