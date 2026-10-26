@@ -45,7 +45,6 @@ D("orbb.li", REG_NONE, DnsProvider(DSP_CLOUDFLARE),
   NS("aws", "ns-784.awsdns-34.net."),
 
   // ── homelab via cloudflared tunnels (proxied) ────────────────────────────
-  CNAME("av", "5436f3c8-b154-4491-af9b-e565a9e947e6.cfargotunnel.com.", CF_PROXY_ON),
   CNAME("grafana-lab", TUNNEL_HK1, CF_PROXY_ON),
   CNAME("infra-lab", TUNNEL_HK1, CF_PROXY_ON),
   CNAME("keycloak-lab", TUNNEL_HK1, CF_PROXY_ON),
