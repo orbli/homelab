@@ -1,0 +1,68 @@
+name: Sync orbb.li DNS
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'dns/**'
+      - '.github/workflows/dns-sync.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'dns/**'
+      - '.github/workflows/dns-sync.yml'
+  workflow_dispatch:
+
+# Runs DNSControl against Cloudflare using the token in GH secret CF_TOKEN
+# (dns/creds.json reads it from $CF_TOKEN; same value as dns/.env locally).
+#
+# PRs: `preview` only, so the diff shows up in the job log + step summary
+# before merge. master: `preview` then `push`.
+#
+# Why preview matters: dns/dnsconfig.js is the FULL zone. Any live
+# record missing from it is DELETED on push, and the cloudflared tunnel is
+# remotely managed, so a Public Hostname added in Zero Trust creates a
+# dashboard-only CNAME that this workflow would remove unless it has been
+# copied into dnsconfig.js first. Read the PR preview for unexpected DELETEs.
+#
+# Why pin + checksum: the release tarball is downloaded directly, so the
+# sha256 guards against a swapped asset. v5 exists upstream but may change
+# behaviour; bump DNSCONTROL_VERSION + DNSCONTROL_SHA256 together (from that
+# release's checksums.txt) and check `preview` shows 0 corrections locally.
+
+env:
+  DNSCONTROL_VERSION: 4.42.0
+  DNSCONTROL_SHA256: 5766c35f25b6a913e34b0128d49172cc1855148d42a6097d6219c939cdfd23ac
+
+# Never let two runs push the zone at once.
+concurrency:
+  group: dns-sync
+  cancel-in-progress: false
+
+jobs:
+  dns:
+    name: ${{ github.event_name == 'pull_request' && 'Preview DNS changes' || 'Apply DNS to Cloudflare' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dns
+    env:
+      CF_TOKEN: ${{ secrets.CF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dnscontrol
+        run: |
+          tarball="dnscontrol_${DNSCONTROL_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/StackExchange/dnscontrol/releases/download/v${DNSCONTROL_VERSION}/${tarball}"
+          echo "${DNSCONTROL_SHA256}  ${tarball}" | sha256sum -c -
+          tar xzf "${tarball}" dnscontrol
+          sudo install dnscontrol /usr/local/bin/dnscontrol
+          dnscontrol version
+      - name: Preview
+        run: |
+          set -o pipefail
+          dnscontrol preview --no-colors 2>&1 | tee preview.txt
+          { echo '### dnscontrol preview'; echo '```'; cat preview.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Push
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: dnscontrol push --no-colors
