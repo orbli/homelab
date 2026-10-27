@@ -15,6 +15,7 @@ spec:
       containers:
       - name: app
         image: ghcr.io/orbli/authorship-registry/web:main
+        imagePullPolicy: Always
         ports:
         - containerPort: 3000
         env:
