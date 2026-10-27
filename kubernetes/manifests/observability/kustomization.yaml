@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - claude-code-dashboard.yaml
+  - grafana-ingress.yaml  # grafana-lab.orbb.li (Service prometheus-grafana comes from the Ansible-installed kube-prometheus-stack)

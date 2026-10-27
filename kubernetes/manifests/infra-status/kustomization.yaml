@@ -8,6 +8,7 @@ resources:
 - rbac.yaml
 - service.yaml
 - deployment.yaml
+- ingress.yaml
 
 # server.py lives in files/ as the single source of truth. The generated
 # ConfigMap gets a content-hash suffix, so editing the script rolls the

@@ -43,6 +43,12 @@ spec:
   # Proxy configuration for Cloudflare Tunnel
   proxy:
     headers: xforwarded
+
+  # The operator creates the Ingress (host = hostname above, backend keycloak-service:http).
+  # Giving it the cloudflare-tunnel class makes the tunnel ingress controller publish it.
+  ingress:
+    enabled: true
+    className: cloudflare-tunnel
     
   # Transaction configuration
   transaction:

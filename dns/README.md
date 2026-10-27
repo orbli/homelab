@@ -32,3 +32,13 @@ orbb.li lives on **Cloudflare** (`nadia`/`pablo` nameservers). This folder track
   the dashboard. After adding one there, run `preview` and copy the new record into
   `dnsconfig.js`, or the next push removes it.
 - `DefaultTTL(1)` = Cloudflare "Auto"; without it every record shows a phantom TTL diff.
+
+## Lab hostnames are owned by the cluster, not by this zone file
+
+`<app>-lab.orbb.li` CNAMEs (and their `_ctic_managed.<app>-lab` TXT ownership
+records) are created and deleted by the cloudflare-tunnel ingress controller
+from each app's Ingress object; see
+`kubernetes/manifests/cloudflared-namespace/README.md`. `dnsconfig.js` carries
+`IGNORE("*-lab", "CNAME")` and `IGNORE("_ctic_managed.*-lab", "TXT")` so
+`preview`/`push` leave them alone. Do not add a `-lab` CNAME here: DNSControl
+refuses a record that is both ignored and declared.
