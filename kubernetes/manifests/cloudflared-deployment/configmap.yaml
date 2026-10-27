@@ -41,4 +41,8 @@ data:
       service: http://infra-status.infra-status.svc.home-hk1-cluster.orbb.li:80
       originRequest:
         noTLSVerify: true
+    - hostname: registry-lab.orbb.li
+      service: http://authorship-registry.authorship-registry.svc.home-hk1-cluster.orbb.li:80
+      originRequest:
+        noTLSVerify: true
     - service: http_status:404

@@ -48,6 +48,7 @@ D("orbb.li", REG_NONE, DnsProvider(DSP_CLOUDFLARE),
   CNAME("grafana-lab", TUNNEL_HK1, CF_PROXY_ON),
   CNAME("infra-lab", TUNNEL_HK1, CF_PROXY_ON),
   CNAME("keycloak-lab", TUNNEL_HK1, CF_PROXY_ON),
+  CNAME("registry-lab", TUNNEL_HK1, CF_PROXY_ON),  // authorship-registry demo; tunnel ingress rule added via API/dashboard
   CNAME("remark42-lab", TUNNEL_HK1, CF_PROXY_ON),
 
   // ── ada.orbb.li → authorship registry (AWS CloudFront in front of a Lambda URL) ──
