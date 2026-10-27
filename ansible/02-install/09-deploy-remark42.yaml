@@ -10,10 +10,9 @@
 # - ArgoCD manages: PVC, Service, Deployment
 # - Ansible manages: app secret (jwt + admin passwd), OAuth client secret
 #
-# Cloudflared route: edit kubernetes/manifests/cloudflared-deployment/configmap.yaml
-# (already includes remark42-lab.orbb.li) and re-run 03-deploy-cloudflared.yaml.
-# DNS route at Cloudflare itself: run once on a machine with the cloudflared
-# CLI logged in (the playbook prints the exact command at the end).
+# Public hostname: kubernetes/manifests/remark42-deployment/ingress.yaml (class
+# cloudflare-tunnel). The tunnel ingress controller creates the tunnel rule and
+# the DNS record from it; nothing to do here or in Cloudflare.
 
 - name: Deploy Remark42 via ArgoCD
   hosts: localhost
@@ -260,15 +259,9 @@
           Service URL (cluster): http://remark42.default.svc.{{ cluster_domain }}
           Public URL:            {{ app_root_url }}
 
-          ---- One-time DNS setup ----
-          The cloudflared ConfigMap now includes a route for remark42-lab.orbb.li,
-          but the Cloudflare-side DNS record still needs to be created. Run this
-          ONCE on a machine with the cloudflared CLI logged in:
-
-            cloudflared tunnel route dns home-hk1-cluster-tunnel remark42-lab.orbb.li
-
-          Then re-run 03-deploy-cloudflared.yaml to roll out the updated ConfigMap
-          (the cloudflared pods need to be restarted to pick up the new route).
+          ---- Public hostname ----
+          remark42-lab.orbb.li is the Ingress in the remark42 kustomize folder;
+          the cloudflare-tunnel ingress controller publishes it (tunnel rule + DNS).
 
           ---- Admin login ----
           Admin login via HTTP Basic auth as fallback:

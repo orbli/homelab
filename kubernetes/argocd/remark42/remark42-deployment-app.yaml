@@ -24,9 +24,8 @@ spec:
   syncPolicy:
     automated:
       prune: true
-      # Same reasoning as cloudflared-deployment: the deployment references
-      # secrets that Ansible creates out-of-band, so don't let ArgoCD self-heal
-      # while those are still being provisioned.
+      # The deployment references secrets that Ansible creates out-of-band,
+      # so don't let ArgoCD self-heal while those are still being provisioned.
       selfHeal: false
     syncOptions:
     - CreateNamespace=false

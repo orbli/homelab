@@ -7,7 +7,7 @@
 | Component | Namespace | Helm Release | Installation Script | Status |
 |-----------|-----------|--------------|-------------------|---------|
 | **ArgoCD** | gitops | ArgoCD Core | `02-install/01-install-argocd.yaml` / `02-argocd-self-hosting.yaml` | ✅ Running |
-| **Cloudflare Tunnels** | ingress | Manual deployment | `02-install/03-deploy-cloudflared.yaml` | ✅ Running |
+| **Cloudflare Tunnel** | ingress | cloudflare-tunnel-ingress-controller (Helm via ArgoCD) | `kubernetes/argocd/cloudflared/` + one Secret, see `kubernetes/manifests/cloudflared-namespace/README.md` | ✅ Running |
 | **Keycloak** | iam | keycloak | `02-install/04-deploy-keycloak.yaml` | ✅ Running |
 | **Loki** | observability | loki | `02-install/05-deploy-log-collection.yaml` | ✅ Running |
 | **Alloy** | observability | alloy | `02-install/05-deploy-log-collection.yaml` | ✅ Running |
@@ -40,7 +40,7 @@ All components are successfully deployed with proper GitOps management through A
 
 **All Components Managed Via GitOps**:
 1. `ArgoCD Core` → `02-install/01-install-argocd.yaml` + `02-argocd-self-hosting.yaml`
-2. `Cloudflare Tunnel` → `02-install/03-deploy-cloudflared.yaml`
+2. `Cloudflare Tunnel` → `kubernetes/argocd/cloudflared/` (ingress controller; hostnames are Ingress objects in each app)
 3. `Keycloak` → `02-install/04-deploy-keycloak.yaml`
 4. `Loki + Alloy` → `02-install/05-deploy-log-collection.yaml`
 5. `Grafana OAuth` → `02-install/06-config-grafana-oauth.yaml`
@@ -78,7 +78,7 @@ If rebuilding from scratch:
 
 3. **Phase 3 - Core Services** (02-install):
    ```bash
-   03-deploy-cloudflared.yaml
+   (Cloudflare Tunnel: kubectl apply -f kubernetes/argocd/cloudflared/ after creating its Secret)
    04-deploy-keycloak.yaml
    09-install_ts_k8s_operator.yaml (from 01-setup)
    ```

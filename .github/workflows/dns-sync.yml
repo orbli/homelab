@@ -20,10 +20,11 @@ on:
 # before merge. master: `preview` then `push`.
 #
 # Why preview matters: dns/dnsconfig.js is the FULL zone. Any live
-# record missing from it is DELETED on push, and the cloudflared tunnel is
-# remotely managed, so a Public Hostname added in Zero Trust creates a
-# dashboard-only CNAME that this workflow would remove unless it has been
-# copied into dnsconfig.js first. Read the PR preview for unexpected DELETEs.
+# record missing from it is DELETED on push. The only records it leaves
+# alone are the IGNORE()d ones: *-lab CNAMEs and their _ctic_managed TXTs,
+# which the cloudflare-tunnel ingress controller owns. Anything created by
+# hand in the dashboard must be copied into dnsconfig.js or it goes.
+# Read the PR preview for unexpected DELETEs.
 #
 # Why pin + checksum: the release tarball is downloaded directly, so the
 # sha256 guards against a swapped asset. v5 exists upstream but may change

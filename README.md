@@ -37,7 +37,7 @@ homelab/
 ├── kubernetes/                  # GitOps-managed resources
 │   ├── apps/                   # Kubernetes manifests
 │   │   ├── argocd/            # Self-hosting config
-│   │   ├── cloudflared/       # Tunnel deployment
+│   │   ├── cloudflared/       # Cloudflare Tunnel ingress controller (+ ingress namespace)
 │   │   ├── iam/               # Keycloak & identity
 │   │   └── observability/     # Monitoring namespace
 │   └── gitops/                 # ArgoCD Applications
@@ -89,8 +89,9 @@ fails; everything else in this repo works without it.
 
 3. **Deploy Core Services**
    ```bash
-   # Networking (Cloudflare Tunnel)
-   ansible-playbook 02-install/03-deploy-cloudflared.yaml
+   # Networking (Cloudflare Tunnel as a Kubernetes Ingress): create the one Secret, apply the apps.
+   # See kubernetes/manifests/cloudflared-namespace/README.md
+   kubectl apply -f kubernetes/argocd/cloudflared/
    
    # Identity Provider (Keycloak)
    ansible-playbook 02-install/04-deploy-keycloak.yaml
@@ -120,7 +121,6 @@ ARGOCD_OPTS="--core" argocd app list
 **Cleanup Playbooks:**
 ```bash
 ansible-playbook 02-install/cleanup-keycloak.yaml
-ansible-playbook 02-install/cleanup-cloudflared.yaml
 ansible-playbook 02-install/cleanup-observability.yaml
 ```
 
