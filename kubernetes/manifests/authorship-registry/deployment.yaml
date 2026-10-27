@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: app
-        image: ghcr.io/orbli/authorship-registry:main
+        image: ghcr.io/orbli/authorship-registry/web:main
         ports:
         - containerPort: 3000
         env:
