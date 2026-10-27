@@ -1,0 +1,24 @@
+name: Tailscale ACL apply
+
+# Deploy: pushes the policy to the live tailnet on every push to master
+# that bumps the private/ submodule pointer (i.e. a merged PR from
+# orbli/homelab-private), or on manual dispatch. Never triggered by
+# pull_request, so it does not show up on PRs. See tailscale-acl-sync.yml.
+# Always `gh run watch` after a merge: a red run means the live ACL did
+# NOT change.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'private'
+      - '.gitmodules'
+      - '.github/workflows/tailscale-acl-*.yml'
+  workflow_dispatch:
+
+jobs:
+  apply:
+    uses: ./.github/workflows/tailscale-acl-sync.yml
+    with:
+      mode: apply
+    secrets: inherit

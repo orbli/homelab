@@ -1,0 +1,26 @@
+name: Tailscale ACL test
+
+# PR-only: dry-runs the policy against Tailscale's validator and reports
+# drift between the file and the live tailnet. This is the only ACL
+# workflow that the pull_request event triggers, so a PR's checks list
+# shows exactly one entry for the ACL. See tailscale-acl-sync.yml.
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      # `private` (no slash) = the submodule pointer itself; a bump of
+      # that gitlink is what a policy change looks like in this repo.
+      - 'private'
+      - '.gitmodules'
+      - '.github/workflows/tailscale-acl-*.yml'
+
+jobs:
+  test:
+    # Fork PRs get no secrets, so they could not check out the private
+    # submodule; run only for PRs from branches in this repo.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/tailscale-acl-sync.yml
+    with:
+      mode: test
+    secrets: inherit

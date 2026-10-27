@@ -53,11 +53,14 @@ homelab/
 `private/` is a git submodule pointing at **orbli/homelab-private**, a
 private repo with the same top-level layout. It holds config that is not
 secret but should not be world-readable, currently the Tailscale ACL
-(member emails, host map, security notes). The sync workflow that applies
-it, `.github/workflows/tailscale-acl-sync.yml`, stays in this public repo:
-on every push to `master` that bumps the submodule pointer it checks out
-the private repo (via the `HOMELAB_PRIVATE_TOKEN` secret) and runs
-Tailscale's `gitops-pusher` against `private/tailscale/acl.hujson`.
+(member emails, host map, security notes). The workflows that apply it
+stay in this public repo: a push to the private repo opens a PR here
+that bumps the submodule pointer; `tailscale-acl-test.yml` dry-runs the
+policy on that PR, and merging runs `tailscale-acl-apply.yml`, which
+pushes it to the live tailnet. Both call the reusable
+`tailscale-acl-sync.yml`, which checks out the private repo (via the
+`HOMELAB_PRIVATE_TOKEN` secret) and runs Tailscale's `gitops-pusher`
+against `private/tailscale/acl.hujson`.
 Without access to the private repo, `git submodule update` here simply
 fails; everything else in this repo works without it.
 
