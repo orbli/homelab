@@ -4,15 +4,31 @@ on:
   push:
     branches: [master]
     paths:
-      - 'tailscale/**'
+      # `private` (no slash) = the submodule pointer itself; a bump of
+      # that gitlink is what a policy change looks like in this repo.
+      - 'private'
+      - '.gitmodules'
       - '.github/workflows/tailscale-acl-sync.yml'
   pull_request:
     branches: [master]
     paths:
-      - 'tailscale/**'
+      - 'private'
+      - '.gitmodules'
       - '.github/workflows/tailscale-acl-sync.yml'
   workflow_dispatch:
 
+# The policy file is NOT in this repo. It lives in orbli/homelab-private
+# (private), mounted here as the `private/` submodule, so the file this
+# workflow applies is private/tailscale/acl.hujson. To change the ACL:
+# commit+push in the private repo, then bump the submodule pointer here
+# (`git -C private pull && git add private && git commit && git push`).
+# The pointer bump is the trigger; a push to the private repo alone does
+# nothing. Checking out a private submodule needs a token that can read
+# that repo: GH secret HOMELAB_PRIVATE_TOKEN (fine-grained PAT, Contents:
+# read-only on orbli/homelab-private only). This repo is public, so note
+# that run LOGS are public too: gitops-pusher prints etags and, on a
+# rejected policy, the validator's error text. Secrets are masked.
+#
 # Installs the `gitops-pusher` binary from tailscale/tailscale (pinned
 # to a specific Tailscale release tag) and runs it against the OAuth
 # client whose credentials are in GH secrets TS_API_CLIENT_ID +
@@ -48,9 +64,15 @@ jobs:
   acl-test:
     name: Test ACL syntax + drift detect (PRs only)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Fork PRs get no secrets, so they could not check out the private
+    # submodule; run only for PRs from branches in this repo.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+          token: ${{ secrets.HOMELAB_PRIVATE_TOKEN }}
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -75,7 +97,7 @@ jobs:
           TS_TAILNET: ${{ secrets.TS_TAILNET }}
         run: |
           ~/go/bin/gitops-pusher \
-            --policy-file=./tailscale/acl.hujson \
+            --policy-file=./private/tailscale/acl.hujson \
             --cache-file=./version-cache.json \
             test
 
@@ -85,6 +107,10 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+          token: ${{ secrets.HOMELAB_PRIVATE_TOKEN }}
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -105,6 +131,6 @@ jobs:
           TS_TAILNET: ${{ secrets.TS_TAILNET }}
         run: |
           ~/go/bin/gitops-pusher \
-            --policy-file=./tailscale/acl.hujson \
+            --policy-file=./private/tailscale/acl.hujson \
             --cache-file=./version-cache.json \
             apply

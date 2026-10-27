@@ -43,8 +43,23 @@ homelab/
 │   └── gitops/                 # ArgoCD Applications
 │       └── apps/               # Application definitions
 ├── docs/                       # Documentation
+├── private/                    # Submodule -> orbli/homelab-private (see below)
+│   └── tailscale/acl.hujson    #   tailnet ACL, applied by GitHub Actions
 └── TODOs/                      # Future projects
 ```
+
+### Private companion repo
+
+`private/` is a git submodule pointing at **orbli/homelab-private**, a
+private repo with the same top-level layout. It holds config that is not
+secret but should not be world-readable, currently the Tailscale ACL
+(member emails, host map, security notes). The sync workflow that applies
+it, `.github/workflows/tailscale-acl-sync.yml`, stays in this public repo:
+on every push to `master` that bumps the submodule pointer it checks out
+the private repo (via the `HOMELAB_PRIVATE_TOKEN` secret) and runs
+Tailscale's `gitops-pusher` against `private/tailscale/acl.hujson`.
+Without access to the private repo, `git submodule update` here simply
+fails; everything else in this repo works without it.
 
 ## 🚀 Quick Start
 

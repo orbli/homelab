@@ -4,7 +4,7 @@ Job specs for the single-node Nomad agent on **oracle-apt1-vm1** (Oracle Cloud,
 Japan, tailnet `tag:exit-node`). This directory is the source of truth; the
 copies under `/home/ubuntu/` on the VM are deploy artifacts.
 
-Unlike `kubernetes/` (ArgoCD) and `tailscale/` (GitHub Actions sync), there is
+Unlike `kubernetes/` (ArgoCD) and `private/tailscale/` (GitHub Actions sync), there is
 **no automated reconciliation** for these yet — deploys are manual:
 
 ```bash
