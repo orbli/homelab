@@ -17,5 +17,5 @@ commonLabels:
 # Secrets are created out-of-band (not in git):
 #   registry-db   password            generated once
 #   registry-app  ADMIN_EMAIL SMTP_USERNAME SMTP_PASSWORD   Gmail app password for outbound mail
-# Public hostname registry-lab.orbb.li is a cloudflared Public Hostname (Zero Trust dashboard)
-# pointing at http://authorship-registry.authorship-registry.svc.cluster.local:80
+# Public hostname registry-lab.orbb.li: DNS CNAME in dns/dnsconfig.js; tunnel hk1 ingress rule (remotely managed, see cloudflared-deployment/configmap.yaml mirror)
+# pointing at http://authorship-registry.authorship-registry.svc.home-hk1-cluster.orbb.li:80
