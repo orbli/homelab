@@ -1,0 +1,51 @@
+name: Sync tunnel ingress
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'kubernetes/manifests/cloudflared-deployment/configmap.yaml'
+      - 'dns/tunnel-ingress.py'
+      - '.github/workflows/tunnel-sync.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'kubernetes/manifests/cloudflared-deployment/configmap.yaml'
+      - 'dns/tunnel-ingress.py'
+      - '.github/workflows/tunnel-sync.yml'
+  workflow_dispatch:
+
+# The cloudflared tunnel is remotely managed: its public hostnames live in the
+# Cloudflare control plane, not in the ConfigMap the pods mount. This workflow
+# makes the ConfigMap's `ingress:` block authoritative anyway by pushing it to
+# the Cloudflare API (dns/tunnel-ingress.py). Same CF_TOKEN as dns-sync.yml;
+# the token needs Account -> Cloudflare Tunnel -> Edit for this one.
+#
+# PRs: `plan` only (diff in the job log + step summary, plus a warning for any
+# hostname that has no proxied CNAME in dns/dnsconfig.js). master: `apply`.
+# The whole rule list is replaced on apply, so a hostname removed from the
+# ConfigMap is removed from the tunnel. Read the PR plan.
+
+concurrency:
+  group: tunnel-sync
+  cancel-in-progress: false
+
+jobs:
+  tunnel:
+    name: ${{ github.event_name == 'pull_request' && 'Plan tunnel ingress' || 'Apply tunnel ingress' }}
+    runs-on: ubuntu-latest
+    # Fork PRs get no secrets; run only for PRs from branches in this repo.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      CF_TOKEN: ${{ secrets.CF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet pyyaml
+      - name: Plan
+        run: |
+          set -o pipefail
+          python3 dns/tunnel-ingress.py plan 2>&1 | tee plan.txt
+          { echo '### tunnel ingress plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Apply
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: python3 dns/tunnel-ingress.py apply

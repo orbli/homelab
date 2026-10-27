@@ -32,3 +32,30 @@ orbb.li lives on **Cloudflare** (`nadia`/`pablo` nameservers). This folder track
   the dashboard. After adding one there, run `preview` and copy the new record into
   `dnsconfig.js`, or the next push removes it.
 - `DefaultTTL(1)` = Cloudflare "Auto"; without it every record shows a phantom TTL diff.
+
+## Tunnel public hostnames (`tunnel-ingress.py`)
+
+The cloudflared tunnel `home-hk1-cluster-tunnel` is remotely managed, so its
+public hostnames live in Cloudflare, not in the ConfigMap the pods mount. The
+`ingress:` block in `kubernetes/manifests/cloudflared-deployment/configmap.yaml`
+is still the source of truth: `.github/workflows/tunnel-sync.yml` runs
+`dns/tunnel-ingress.py plan` on pull requests and `apply` on master, which
+replaces the tunnel's rule list with the block.
+
+```
+set -a; . .env; set +a
+python3 tunnel-ingress.py plan    # diff file vs live (read-only)
+python3 tunnel-ingress.py apply   # push if they differ
+```
+
+Adding a lab host is two lines in two files, one PR:
+
+1. `CNAME("<app>-lab", TUNNEL_HK1, CF_PROXY_ON)` in `dnsconfig.js`.
+2. A `- hostname: <app>-lab.orbb.li` rule above the catch-all in the ConfigMap,
+   service `http://<svc>.<ns>.svc.home-hk1-cluster.orbb.li:<port>`.
+
+The plan warns about any hostname in the ConfigMap that has no proxied CNAME to
+the tunnel, so forgetting step 1 shows up on the PR. Account and tunnel ids are
+derived from the zone and the tunnel name; the token needs Account → Cloudflare
+Tunnel → Edit (added 2026-10-27) on top of the zone permissions.
+Rules removed from the ConfigMap are removed from the tunnel on merge.

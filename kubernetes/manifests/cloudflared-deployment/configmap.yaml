@@ -17,13 +17,14 @@ data:
     # autoupdate doesn't make sense in Kubernetes. However, outside of Kubernetes, we strongly
     # recommend using autoupdate.
     no-autoupdate: true
-    # The `ingress` block tells cloudflared which local service to route incoming
-    # requests to. For more about ingress rules, see
-    # https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configuration/ingress
-    #
-    # Remember, these rules route traffic from cloudflared to a local service. To route traffic
-    # from the internet to cloudflared, run `cloudflared tunnel route dns <tunnel> <hostname>`.
-    # E.g. `cloudflared tunnel route dns example-tunnel tunnel.example.com`.
+    # The `ingress` block is the SOURCE OF TRUTH for the tunnel's public hostnames,
+    # but not via this file at runtime: the tunnel is remotely managed, so
+    # cloudflared ignores the block below and takes its rules from Cloudflare.
+    # CI (.github/workflows/tunnel-sync.yml, dns/tunnel-ingress.py) pushes this
+    # block to the Cloudflare API: plan on PRs, apply on master. Keep the
+    # catch-all last. The matching DNS CNAME is a separate record in
+    # dns/dnsconfig.js (CNAME("<app>-lab", TUNNEL_HK1, CF_PROXY_ON)).
+    # In-cluster DNS suffix is home-hk1-cluster.orbb.li, not cluster.local.
     ingress:
     - hostname: keycloak-lab.orbb.li
       service: http://keycloak-service.iam.svc.home-hk1-cluster.orbb.li:8080
@@ -31,16 +32,10 @@ data:
         noTLSVerify: true
     - hostname: grafana-lab.orbb.li
       service: http://prometheus-grafana.observability.svc.home-hk1-cluster.orbb.li
-      originRequest:
-        noTLSVerify: true
     - hostname: remark42-lab.orbb.li
-      service: http://remark42.default.svc.home-hk1-cluster.orbb.li:80
-      originRequest:
-        noTLSVerify: true
+      service: http://remark42.default.svc.home-hk1-cluster.orbb.li
     - hostname: infra-lab.orbb.li
-      service: http://infra-status.infra-status.svc.home-hk1-cluster.orbb.li:80
-      originRequest:
-        noTLSVerify: true
+      service: http://infra-status.infra-status.svc.home-hk1-cluster.orbb.li
     - hostname: registry-lab.orbb.li
       service: http://authorship-registry.authorship-registry.svc.home-hk1-cluster.orbb.li:80
       originRequest:
