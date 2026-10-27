@@ -44,12 +44,15 @@ D("orbb.li", REG_NONE, DnsProvider(DSP_CLOUDFLARE),
   NS("aws", "ns-358.awsdns-44.com."),
   NS("aws", "ns-784.awsdns-34.net."),
 
-  // ── homelab via cloudflared tunnels (proxied) ────────────────────────────
-  CNAME("grafana-lab", TUNNEL_HK1, CF_PROXY_ON),
-  CNAME("infra-lab", TUNNEL_HK1, CF_PROXY_ON),
-  CNAME("keycloak-lab", TUNNEL_HK1, CF_PROXY_ON),
-  CNAME("registry-lab", TUNNEL_HK1, CF_PROXY_ON),  // authorship-registry demo; tunnel ingress rule added via API/dashboard
-  CNAME("remark42-lab", TUNNEL_HK1, CF_PROXY_ON),
+  // ── homelab via cloudflared tunnel hk1 (proxied) ─────────────────────────
+  // <app>-lab CNAMEs are NOT declared here: the cloudflare-tunnel ingress
+  // controller in the cluster creates them (plus a _ctic_managed.<host> TXT
+  // ownership record) from each app's Ingress object. These IGNOREs make
+  // DNSControl leave those records alone; everything else in the zone stays
+  // managed here. To publish a new lab app, add an Ingress with
+  // ingressClassName cloudflare-tunnel in its kustomize folder, nothing here.
+  IGNORE("*-lab", "CNAME"),
+  IGNORE("_ctic_managed.*-lab", "TXT"),
 
   // ── Tailscale: domain ownership verification for the orbb.li tailnet ─────
   TXT("_tailscale-challenge", "v2=QP824tjGBRKqHTaCp1dxRNatBJUuncC1AuZJCAj9FTBa"),

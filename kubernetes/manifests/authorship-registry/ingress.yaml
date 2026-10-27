@@ -1,0 +1,20 @@
+# Public hostname for this app. The cloudflare-tunnel ingress controller turns
+# this into a tunnel rule + a proxied CNAME in orbb.li (DNSControl ignores
+# *-lab CNAMEs, see dns/dnsconfig.js). Origin: http://authorship-registry.<ns>.svc.home-hk1-cluster.orbb.li:80
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authorship-registry
+spec:
+  ingressClassName: cloudflare-tunnel
+  rules:
+  - host: registry-lab.orbb.li
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: authorship-registry
+            port:
+              number: 80
