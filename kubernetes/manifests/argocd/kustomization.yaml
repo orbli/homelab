@@ -33,6 +33,12 @@ patches:
   target:
     kind: ConfigMap
     name: argocd-cm
+# Disables git submodule init in the repo-server (private/ submodule is
+# a private repo ArgoCD cannot clone). See the patch file for details.
+- path: argocd-cmd-params-cm-patch.yaml
+  target:
+    kind: ConfigMap
+    name: argocd-cmd-params-cm
 # Optional: Resource adjustments for Raspberry Pi
 - patch: |-
     apiVersion: apps/v1

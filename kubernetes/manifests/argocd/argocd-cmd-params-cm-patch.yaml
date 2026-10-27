@@ -1,0 +1,17 @@
+# Patch for the ArgoCD repo-server command parameters.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: gitops
+data:
+  # Do NOT run `git submodule update --init` when checking out this repo.
+  # The `private/` submodule points at orbli/homelab-private, which the
+  # repo-server has no credentials for, so with submodules enabled every
+  # checkout fails ("could not read Username for 'https://github.com'")
+  # and every Application goes to ComparisonError. Nothing ArgoCD renders
+  # lives under private/ (it only holds the Tailscale ACL consumed by GH
+  # Actions), so skipping submodules loses nothing.
+  # Repo-server reads this as ARGOCD_GIT_MODULES_ENABLED; a restart of
+  # argocd-repo-server is required after changing it.
+  reposerver.enable.git.submodule: "false"
