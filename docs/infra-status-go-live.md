@@ -1,5 +1,9 @@
 # infra-status — go-live runbook
 
+> Historical (2026-07). Tunnel routing has since moved to the cloudflare-tunnel
+> ingress controller: the hostname is `kubernetes/manifests/infra-status/ingress.yaml`,
+> and the ConfigMap/rollout steps below no longer exist.
+
 Public, sanitized live-status page for the estate (à la wtako.net), served
 outbound-only through the cloudflared tunnel. Backend already runs in-cluster
 (ns `infra-status`); these steps expose it and ship the Hugo `/infra` page.

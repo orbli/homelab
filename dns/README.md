@@ -28,9 +28,6 @@ orbb.li lives on **Cloudflare** (`nadia`/`pablo` nameservers). This folder track
 
 - Lab hosts are `<app>-lab.orbb.li` (dash) because the free-plan Universal SSL only covers
   one wildcard level. See `../CLAUDE.md`.
-- The cloudflared tunnel is remotely managed: its Public Hostnames create CNAME records in
-  the dashboard. After adding one there, run `preview` and copy the new record into
-  `dnsconfig.js`, or the next push removes it.
 - `DefaultTTL(1)` = Cloudflare "Auto"; without it every record shows a phantom TTL diff.
 
 ## Lab hostnames are owned by the cluster, not by this zone file
