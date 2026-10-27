@@ -51,6 +51,9 @@ D("orbb.li", REG_NONE, DnsProvider(DSP_CLOUDFLARE),
   CNAME("registry-lab", TUNNEL_HK1, CF_PROXY_ON),  // authorship-registry demo; tunnel ingress rule added via API/dashboard
   CNAME("remark42-lab", TUNNEL_HK1, CF_PROXY_ON),
 
+  // ── Tailscale: domain ownership verification for the orbb.li tailnet ─────
+  TXT("_tailscale-challenge", "v2=QP824tjGBRKqHTaCp1dxRNatBJUuncC1AuZJCAj9FTBa"),
+
   // ── ada.orbb.li → authorship registry (AWS CloudFront in front of a Lambda URL) ──
   // DNS-only: CloudFront terminates TLS with its own ACM certificate.
   // ACM certificate: arn:aws:acm:us-east-1:599415174730:certificate/de785670-47b9-4674-933a-b2808eabf608
