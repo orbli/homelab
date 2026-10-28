@@ -49,6 +49,19 @@ spec:
             secretKeyRef:
               name: registry-app
               key: ADMIN_EMAIL
+        # "Sign in with Google" for staff: add both keys to the registry-app Secret to enable.
+        - name: GOOGLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: registry-app
+              key: GOOGLE_CLIENT_ID
+              optional: true
+        - name: GOOGLE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: registry-app
+              key: GOOGLE_CLIENT_SECRET
+              optional: true
         readinessProbe:
           httpGet:
             path: /healthz
