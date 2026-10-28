@@ -13,7 +13,8 @@ INTERVAL = float(os.environ.get("INTERVAL", "1"))
 PORT     = int(os.environ.get("PORT", "8080"))
 HTTP_TIMEOUT = 5
 PROM  = "http://prometheus-kube-prometheus-prometheus.observability.svc:9090"
-GLM   = "http://glm-spark1.networking.svc:8000"
+COMFY = "http://glm-spark1.networking.svc:8188"   # ComfyUI on GB10 α (image editing)
+VIDEO = "http://glm-spark2.networking.svc:7860"   # Bernini-R gradio on GB10 β (video generation)
 NOMAD = "http://nomad-hk2.networking.svc:4646"
 KUBE  = "https://kubernetes.default.svc"
 SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
@@ -96,33 +97,35 @@ def ssh_run(host, remote, timeout):
 
 # ─────────────────────────────────────────────────────────── sources ──────────
 def compute():
-    c = {"model": None, "up": False, "apis": ["OpenAI", "Anthropic"],
-         "params_b": None, "ctx": None, "vram_gb": None, "gpus": 2,
-         "tok_s": None, "kv_cache_pct": None}
-    m = jget(GLM + "/v1/models")
-    if m and m.get("data"):
-        d = m["data"][0]
-        c["model"] = d.get("id")
-        meta = d.get("meta", {})
-        if meta.get("n_params"):
-            c["params_b"] = round(meta["n_params"] / 1e9, 1)
-        if meta.get("size"):
-            c["vram_gb"] = round(meta["size"] / (1024**3))
-        c["ctx"] = meta.get("n_ctx")
-    try:
-        http(GLM + "/health"); c["up"] = True
-    except Exception:
-        c["up"] = c["model"] is not None
-    try:
-        txt = http(GLM + "/metrics")
-        tps = parse_prom_text(txt, "llamacpp:predicted_tokens_seconds")
-        if tps is not None:
-            c["tok_s"] = round(tps, 1)
-        kv = parse_prom_text(txt, "llamacpp:kv_cache_usage_ratio")
-        if kv is not None:
-            c["kv_cache_pct"] = round(kv * 100)
-    except Exception:
-        pass
+    # Hero panel: what the two GB10 boxes are serving right now. α runs headless
+    # ComfyUI with Qwen-Image-Edit resident (photo -> line-art pipeline), β runs the
+    # Bernini-R video generator behind a gradio UI. Model names/sizes are static
+    # (ComfyUI has no "loaded model" API); up/queue/engine/memory are live.
+    c = {"kind": "image", "model": "Qwen-Image-Edit-2511", "task": "image editing",
+         "params_b": 20, "engine": None, "up": False, "apis": ["ComfyUI API"],
+         "queue": None, "gpu": "α", "mem_gb": None, "memtot_gb": None,
+         "second": {"model": "Bernini-R", "task": "video generation", "params_b": 14,
+                    "engine": None, "up": False, "gpu": "β"}}
+    st = jget(COMFY + "/system_stats")
+    if st:
+        c["up"] = True
+        v = (st.get("system") or {}).get("comfyui_version")
+        c["engine"] = f"ComfyUI {v}" if v else "ComfyUI"
+    q = jget(COMFY + "/queue")
+    if q is not None:
+        c["queue"] = {"running": len(q.get("queue_running") or []),
+                      "pending": len(q.get("queue_pending") or [])}
+    cfg = jget(VIDEO + "/config")
+    if cfg:
+        c["second"]["up"] = True
+        v = cfg.get("version")
+        c["second"]["engine"] = f"Gradio {v}" if v else "Gradio"
+    # GPU-resident memory comes from the sparks worker (nvidia-smi over SSH).
+    with PLOCK:
+        sp = PARTS.get("sparks")
+    for g in (sp or {}).get("gpus", []):
+        if g.get("label") == "α" and g.get("model_gb") is not None:
+            c["mem_gb"], c["memtot_gb"] = g["model_gb"], g.get("memtot")
     return c
 
 
@@ -185,7 +188,7 @@ def _gpu(line):
 
 
 def _spark_host(lines, label):
-    # lines: [gpu_csv, "MemTotal: N kB", "MemAvailable: N kB", uptime_sec, cores]
+    # lines: [gpu_csv, "MemTotal: N kB", "MemAvailable: N kB", uptime_sec, cores, gpu_proc_mib]
     if len(lines) < 5:
         return None
     g = _gpu(lines[0])
@@ -198,6 +201,8 @@ def _spark_host(lines, label):
         g["memtot"] = round(mt / 1024 / 1024)
         g["_up"] = int(lines[3].strip()) // 86400
         g["_cores"] = int(lines[4].strip())
+        if len(lines) > 5:
+            g["model_gb"] = round(int(lines[5].strip()) / 1024)   # GPU-resident processes (the model)
     except Exception:
         pass
     return g
@@ -212,7 +217,7 @@ def sparks_panel():
         return None
     host = "o@glm-spark2.networking.svc.home-hk1-cluster.orbb.li"
     Q = "nvidia-smi --query-gpu=temperature.gpu,utilization.gpu,clocks.sm,power.draw --format=csv,noheader,nounits"
-    INFO = "grep -E 'MemTotal|MemAvailable' /proc/meminfo; cut -d. -f1 /proc/uptime; grep -c ^processor /proc/cpuinfo"
+    INFO = "grep -E 'MemTotal|MemAvailable' /proc/meminfo; cut -d. -f1 /proc/uptime; grep -c ^processor /proc/cpuinfo; nvidia-smi --query-compute-apps=used_memory --format=csv,noheader,nounits | python3 -c 'import sys;print(sum(int(x) for x in sys.stdin.read().split() if x.isdigit()))'"
     remote = (
         "echo B; " + Q + "; " + INFO + "; "
         "echo A; ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 192.168.100.10 "
@@ -249,7 +254,7 @@ def sparks_panel():
         mets.append(["cpu cores", str(cores)])
     if up:
         mets.append(["uptime", f"{up}d"])
-    return {"name": "GB10 Sparks", "kind": "big", "role": "2× GB10 · GLM tensor-split",
+    return {"name": "GB10 Sparks", "kind": "big", "role": "2× GB10 · image edit (α) · video gen (β)",
             "status": "ok", "pill": f"{len(gpus)}/2 GPU", "gpus": gpus, "metrics": mets}
 
 
