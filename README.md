@@ -185,7 +185,7 @@ ansible-playbook 02-install/cleanup-observability.yaml
 - [x] Keycloak identity provider
 - [x] OAuth integration for Grafana
 - [x] Comprehensive monitoring stack
-- [ ] Ingress controller (Traefik/Nginx) - See TODOs/ingress-project.md
+- [x] Ingress controller (Cloudflare Tunnel ingress controller, class `cloudflare-tunnel`)
 - [ ] Certificate management (cert-manager)
 - [ ] Backup solution (Velero)
 - [ ] Sealed Secrets or External Secrets Operator
