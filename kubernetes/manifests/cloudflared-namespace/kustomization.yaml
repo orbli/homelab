@@ -3,3 +3,11 @@ kind: Kustomization
 
 resources:
 - namespace.yaml
+# One cloudflare-tunnel Ingress per public hostname, all pointing at Traefik.
+# They live here (not in the app folders) because an Ingress backend must be a
+# Service in the Ingress's own namespace, and Traefik's Service is in `ingress`.
+- public-hostnames/grafana-lab.yaml
+- public-hostnames/keycloak-lab.yaml
+- public-hostnames/registry-lab.yaml
+- public-hostnames/remark42-lab.yaml
+- public-hostnames/infra-lab.yaml

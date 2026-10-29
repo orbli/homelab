@@ -6,16 +6,25 @@ Tunnel `home-hk1-cluster-tunnel` (hk1) is driven by the
 Cut over from the hand-managed tunnel on 2026-10-28; the old ConfigMap-driven
 `cloudflared` Deployment and the Ansible playbook that installed it are gone.
 
-**One Ingress per app, in the app's own kustomize folder, is the whole definition
-of a public hostname.** The controller writes the tunnel rule to Cloudflare and
-creates the proxied CNAME `<app>-lab.orbb.li` (plus an ownership TXT
-`_ctic_managed.<app>-lab`). DNSControl ignores those names (`dns/dnsconfig.js`).
+**Every public hostname is one `cloudflare-tunnel` Ingress in `public-hostnames/`
+here, and every one of them points at Traefik.** The controller writes the tunnel
+rule to Cloudflare and creates the proxied CNAME `<app>-lab.orbb.li` (plus an
+ownership TXT `_ctic_managed.<app>-lab`). DNSControl ignores those names
+(`dns/dnsconfig.js`). Traefik (ArgoCD app `traefik`, same namespace) then routes
+by Host to the app's own `ingressClassName: traefik` Ingress. Full picture:
+`docs/ingress-architecture.md`.
+
+The tunnel Ingresses live in this folder rather than in each app's folder because
+a Kubernetes Ingress backend must be a Service in the Ingress's own namespace, and
+Traefik's Service is in `ingress`. (Most app kustomizations also set a
+`namespace:` transformer that would rewrite anything placed there.)
 
 ```yaml
+# public-hostnames/myapp-lab.yaml  (then add it to kustomization.yaml)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: myapp
+  name: myapp-lab
 spec:
   ingressClassName: cloudflare-tunnel
   rules:
@@ -26,7 +35,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: myapp
+            name: traefik
             port:
               number: 80
 ```
@@ -59,7 +68,13 @@ is the 32-hex id in the Cloudflare dashboard URL (`dash.cloudflare.com/<id>`).
   replaces the tunnel's whole rule list (plus a `http_status:404` catch-all).
   It never writes until at least one such Ingress exists.
 - Origins are built as `<svc>.<ns>.svc.home-hk1-cluster.orbb.li:<port>`
-  (`clusterDomain` value); named Service ports are resolved.
+  (`clusterDomain` value); named Service ports are resolved. Since the Traefik
+  tier (2026-10-30) the origin is always `traefik.ingress.svc...:80`; cloudflared
+  preserves the browser's Host header, which is what Traefik routes on.
+- An Ingress that *changes* class away from `cloudflare-tunnel` is simply
+  ignored: the controller returns early, leaves its finalizer on the object and
+  does not rewrite the tunnel rules. To retire a hostname, delete the Ingress
+  (or replace it with a differently named one), never re-class it in place.
 - It runs the cloudflared connector pods itself (`controlled-cloudflared-connector`,
   2 replicas) with a tunnel token it fetches via the API and stores in Secret
   `controlled-cloudflared-token`. Nothing else connects to the tunnel.

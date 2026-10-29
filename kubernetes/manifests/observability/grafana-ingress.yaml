@@ -1,12 +1,16 @@
-# Public hostname for this app. The cloudflare-tunnel ingress controller turns
-# this into a tunnel rule + a proxied CNAME in orbb.li (DNSControl ignores
-# *-lab CNAMEs, see dns/dnsconfig.js). Origin: http://prometheus-grafana.<ns>.svc.home-hk1-cluster.orbb.li:80
+# In-cluster route for grafana-lab.orbb.li. Traffic arrives from Traefik (the tunnel's only
+# origin; see kubernetes/manifests/cloudflared-namespace/public-hostnames/) and
+# Traefik matches on Host to reach this Service.
+#
+# Named *-traefik rather than reusing the old object name on purpose: the old
+# cloudflare-tunnel Ingress had to be deleted (not re-classed) so the tunnel
+# controller would run its finalizer and drop its rule cleanly.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: grafana
+  name: grafana-traefik
 spec:
-  ingressClassName: cloudflare-tunnel
+  ingressClassName: traefik
   rules:
   - host: grafana-lab.orbb.li
     http:

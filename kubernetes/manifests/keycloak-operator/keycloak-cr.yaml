@@ -44,11 +44,13 @@ spec:
   proxy:
     headers: xforwarded
 
-  # The operator creates the Ingress (host = hostname above, backend keycloak-service:http).
-  # Giving it the cloudflare-tunnel class makes the tunnel ingress controller publish it.
+  # Ingress is NOT operator-managed: keycloak-ingress.yaml (class traefik) in
+  # this folder routes keycloak-lab.orbb.li, and the public hostname is in
+  # kubernetes/manifests/cloudflared-namespace/public-hostnames/keycloak-lab.yaml.
+  # Disabling it here makes the operator delete the old cloudflare-tunnel Ingress
+  # it created, which lets the tunnel controller's finalizer clean up properly.
   ingress:
-    enabled: true
-    className: cloudflare-tunnel
+    enabled: false
     
   # Transaction configuration
   transaction:

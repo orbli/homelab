@@ -1,0 +1,97 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: gitops
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: ingress
+  annotations:
+    argocd.argoproj.io/sync-wave: "40"  # after the ingress namespace (30), before the tunnel controller (45)
+spec:
+  project: default
+
+  # Traefik is the single in-cluster entry point. Every public hostname's tunnel
+  # rule points at the Service this chart creates (traefik.ingress:80, see
+  # kubernetes/manifests/cloudflared-namespace/public-hostnames/), and Traefik
+  # routes by Host to the app behind each `ingressClassName: traefik` Ingress.
+  # No middleware is attached today; apps keep their own auth (Grafana does its
+  # own OIDC against Keycloak). The hop exists so that policy *can* live here.
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: 42.1.3   # Traefik v3.7.16; image is multi-arch (arm64 for the Pi nodes)
+    helm:
+      releaseName: traefik   # Service name = traefik; referenced by the tunnel Ingresses
+      valuesObject:
+        deployment:
+          replicas: 2        # match the 2 cloudflared connectors; stateless, so no PDB needed
+
+        # k3s was installed with --disable traefik, so this is the only Traefik
+        # in the cluster. Still never the default class: cloudflare-tunnel
+        # Ingresses must stay exactly as they are.
+        ingressClass:
+          enabled: true
+          isDefaultClass: false
+          name: traefik
+
+        providers:
+          kubernetesIngress:
+            enabled: true
+          kubernetesCRD:
+            enabled: true    # Middleware/IngressRoute CRDs installed but unused for now
+
+        ingressRoute:
+          dashboard:
+            enabled: false   # if ever wanted, expose it on the tailscale IngressClass, not the tunnel
+
+        # servicelb is disabled and nothing reaches Traefik except cloudflared
+        # inside the cluster, so a ClusterIP is the whole exposure.
+        service:
+          spec:
+            type: ClusterIP
+
+        ports:
+          web:
+            # cloudflared terminates TLS at Cloudflare and sends
+            # X-Forwarded-Proto: https + CF-Connecting-IP. Trust them from the
+            # pod network (k3s default cluster CIDR) so apps see https and the
+            # real client IP; otherwise OAuth redirects get built as http://.
+            forwardedHeaders:
+              trustedIPs:
+              - 10.42.0.0/16
+          websecure:
+            expose:
+              default: false # TLS is Cloudflare's job; nothing listens on 443 in-cluster
+
+        global:
+          checkNewVersion: false
+          sendAnonymousUsage: false
+
+        accessLog:
+          enabled: true      # one log line per request through the edge; cheap and invaluable when debugging
+
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingress
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=false  # cloudflared-namespace app owns it
+    - ServerSideApply=true   # Traefik CRDs exceed the client-side last-applied annotation limit
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

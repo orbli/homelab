@@ -37,7 +37,8 @@ homelab/
 ├── kubernetes/                  # GitOps-managed resources
 │   ├── apps/                   # Kubernetes manifests
 │   │   ├── argocd/            # Self-hosting config
-│   │   ├── cloudflared/       # Cloudflare Tunnel ingress controller (+ ingress namespace)
+│   │   ├── cloudflared/       # Cloudflare Tunnel ingress controller (+ ingress namespace, public hostnames)
+│   │   ├── traefik/           # Traefik: single in-cluster entry point behind the tunnel
 │   │   ├── iam/               # Keycloak & identity
 │   │   └── observability/     # Monitoring namespace
 │   └── gitops/                 # ArgoCD Applications
@@ -89,9 +90,9 @@ fails; everything else in this repo works without it.
 
 3. **Deploy Core Services**
    ```bash
-   # Networking (Cloudflare Tunnel as a Kubernetes Ingress): create the one Secret, apply the apps.
-   # See kubernetes/manifests/cloudflared-namespace/README.md
-   kubectl apply -f kubernetes/argocd/cloudflared/
+   # Networking (Cloudflare Tunnel → Traefik → apps): create the one Secret, apply the apps.
+   # See kubernetes/manifests/cloudflared-namespace/README.md and docs/ingress-architecture.md
+   kubectl apply -f kubernetes/argocd/cloudflared/ -f kubernetes/argocd/traefik/
    
    # Identity Provider (Keycloak)
    ansible-playbook 02-install/04-deploy-keycloak.yaml
@@ -130,7 +131,7 @@ ansible-playbook 02-install/cleanup-observability.yaml
 |-----------|---------|--------------|------------|
 | gitops | ArgoCD Core | ArgoCD components | Self-hosted |
 | iam | Identity Management | Keycloak, PostgreSQL | ArgoCD + Ansible |
-| ingress | Network Access | Cloudflare Tunnel | ArgoCD + Ansible |
+| ingress | Network Access | Cloudflare Tunnel (edge), Traefik (routing) | ArgoCD |
 | observability | Monitoring Stack | Prometheus, Loki, Grafana, Alloy | Helm + Ansible |
 
 ## 📊 Monitoring
@@ -185,7 +186,7 @@ ansible-playbook 02-install/cleanup-observability.yaml
 - [x] Keycloak identity provider
 - [x] OAuth integration for Grafana
 - [x] Comprehensive monitoring stack
-- [x] Ingress controller (Cloudflare Tunnel ingress controller, class `cloudflare-tunnel`)
+- [x] Ingress: Cloudflare Tunnel ingress controller (edge) → Traefik (single in-cluster entry point) — see docs/ingress-architecture.md
 - [ ] Certificate management (cert-manager)
 - [ ] Backup solution (Velero)
 - [ ] Sealed Secrets or External Secrets Operator

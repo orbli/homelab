@@ -18,4 +18,5 @@ commonLabels:
 # Secrets are created out-of-band (not in git):
 #   registry-db   password            generated once
 #   registry-app  ADMIN_EMAIL SMTP_USERNAME SMTP_PASSWORD   Gmail app password for outbound mail
-# Public hostname registry-lab.orbb.li: ingress.yaml (cloudflare-tunnel ingress class).
+# registry-lab.orbb.li: ingress.yaml is the traefik route; the public hostname lives in
+# kubernetes/manifests/cloudflared-namespace/public-hostnames/registry-lab.yaml.
