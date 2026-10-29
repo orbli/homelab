@@ -38,6 +38,14 @@ spec:
         providers:
           kubernetesIngress:
             enabled: true
+            # Traefik's Service is a ClusterIP, so publishedService would leave
+            # every traefik Ingress with an empty status.loadBalancer and ArgoCD
+            # would report the owning app as Progressing forever. Publish the
+            # in-cluster name instead; it is also the real endpoint.
+            publishedService:
+              enabled: false
+            ingressEndpoint:
+              hostname: traefik.ingress.svc.home-hk1-cluster.orbb.li
           kubernetesCRD:
             enabled: true    # Middleware/IngressRoute CRDs installed but unused for now
 
