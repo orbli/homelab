@@ -1,0 +1,21 @@
+# Public hostname remark42-lab.orbb.li. The cloudflare-tunnel ingress controller turns
+# this into a tunnel rule + a proxied CNAME in orbb.li (DNSControl ignores
+# *-lab CNAMEs, see dns/dnsconfig.js). Origin is always Traefik; the app's own
+# `ingressClassName: traefik` Ingress (in the app's folder) does the real routing.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: remark42-lab
+spec:
+  ingressClassName: cloudflare-tunnel
+  rules:
+  - host: remark42-lab.orbb.li
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: traefik
+            port:
+              number: 80

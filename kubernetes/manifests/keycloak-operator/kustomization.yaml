@@ -58,6 +58,9 @@ resources:
 # Keycloak CR
 - keycloak-cr.yaml
 
+# Keycloak Ingress (class traefik). Operator ingress is disabled in the CR; see there.
+- keycloak-ingress.yaml
+
 # Note: custom login themes used to be packaged here as ConfigMaps and
 # mounted via spec.unsupported.podTemplate. That approach was replaced
 # by a custom Keycloak image (see Dockerfile + .github/workflows/
